@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Session files
+session/
+auth_info_baileys/
+*.session
+
+# Database
+data/*.json
+*.db
+
+# Environment
+.env
+.env.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Temp files
+temp/
+tmp/
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build
+dist/
+build/
+
+# ZIP files
+*.zip
+
+# Backup
+backup/
+*.bak
