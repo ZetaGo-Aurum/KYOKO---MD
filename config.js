@@ -35,7 +35,7 @@ const config = {
     mode: 'public',
 
     command: {
-        prefix: '.'                       // Prefix utama (.menu, .help, dll)
+        prefix: '$'                       // Prefix utama ($menu, $help, dll)
     },
 
     limits: {
@@ -57,8 +57,8 @@ const config = {
 
     features: {
         antiSpam: true,
-        antiSpamInterval: 3000,
-        antiCall: true,
+        antiSpamInterval: 5000,
+        antiCall: false,
         autoTyping: true,
         autoRead: false,
         logMessage: true,
