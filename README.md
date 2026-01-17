@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://i.ibb.co/placeholder/kyoko-banner.png" alt="KYOKO MD Banner" width="600"/>
+  <img src="assets/images/ourin.jpg" alt="KYOKO MD Banner" width="400"/>
 </p>
 
 <h1 align="center">🌸 KYOKO MD v2.0 🌸</h1>
