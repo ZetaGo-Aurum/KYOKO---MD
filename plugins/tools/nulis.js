@@ -95,7 +95,25 @@ function parseInput(text) {
 }
 
 async function handler(m, { sock }) {
-    const text = m.args?.join(' ')
+    // Get text while preserving newlines from WhatsApp message
+    // m.fullArgs preserves the original text with newlines after command
+    // m.body contains the full original message
+    let text = ''
+    
+    if (m.fullArgs) {
+        // fullArgs = text after command, preserves newlines
+        text = m.fullArgs
+    } else if (m.body) {
+        // Fallback: parse from body directly
+        const bodyMatch = m.body.match(/^[.!$#]?\w+\s+([\s\S]*)$/i)
+        if (bodyMatch) {
+            text = bodyMatch[1]
+        } else {
+            text = m.args?.join(' ') || ''
+        }
+    } else {
+        text = m.args?.join(' ') || ''
+    }
     
     if (!text) {
         return m.reply(

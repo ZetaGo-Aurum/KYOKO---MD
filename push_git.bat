@@ -1,4 +1,4 @@
 @echo off
 git add -A
-git commit -m "fix nulis plugin - replace ImageMagick with napi-rs canvas"
+git commit -m "fix nulis - preserve newlines for numbered format"
 git push origin main
