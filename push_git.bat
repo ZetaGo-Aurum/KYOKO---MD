@@ -1,4 +1,4 @@
 @echo off
 git add -A
-git commit -m "fix connection - hardcode browser and disable HQ link preview to prevent undefined error"
+git commit -m "fix puter crash - lazy load library and add fallback to prevent startup undefined error"
 git push origin main
