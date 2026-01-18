@@ -4,7 +4,7 @@ const pluginConfig = {
     name: 'toanime',
     alias: ['anime'],
     category: 'ai',
-    description: 'Transform foto menjadi anime style (Anything V5)',
+    description: 'Transform foto menjadi anime style (TRUE Img2Img)',
     usage: '.toanime',
     example: '.toanime',
     isOwner: false,
@@ -16,21 +16,14 @@ const pluginConfig = {
     isEnabled: true
 }
 
-// Model: Anything V5 (best for anime style)
-const PROMPT = `anime style illustration, 
-same identity and facial structure, 
-clean anime lineart, soft shading,
-big expressive eyes, smooth skin,
-high quality anime render, masterpiece`
-
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`🎌 *ᴛᴏ ᴀɴɪᴍᴇ (ᴀɴʏᴛʜɪɴɢ ᴠ5)*\n\n> Reply atau kirim gambar dengan caption .toanime`)
+        return m.reply(`🎌 *ᴛᴏ ᴀɴɪᴍᴇ*\n\n> Reply atau kirim gambar dengan caption .toanime\n> _Pose dan komposisi akan dipertahankan!_`)
     }
     
     await m.react('🎌')
-    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan Anything V5...\n> _Mohon bersabar..._`)
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan TRUE Img2Img...\n> _Pose asli akan dipertahankan..._`)
     
     try {
         let mediaBuffer
@@ -45,8 +38,7 @@ async function handler(m, { sock }) {
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        // Use Anything V5 for anime style
-        const result = await nanobanana.generateAnime(PROMPT)
+        const result = await nanobanana.toAnime(mediaBuffer)
         
         if (!result.success || !result.buffer) {
             await m.react('❌')
@@ -57,7 +49,7 @@ async function handler(m, { sock }) {
         
         await sock.sendMessage(m.chat, {
             image: result.buffer,
-            caption: `🎌 *ᴛᴏ ᴀɴɪᴍᴇ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'Anything V5'}_`
+            caption: `🎌 *ᴛᴏ ᴀɴɪᴍᴇ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model}_\n> _TRUE Img2Img_`
         }, { quoted: m })
         
     } catch (error) {

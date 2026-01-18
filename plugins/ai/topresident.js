@@ -4,7 +4,7 @@ const pluginConfig = {
     name: 'topresident',
     alias: ['president', 'presiden'],
     category: 'ai',
-    description: 'Transform foto menjadi presiden Indonesia (SDXL)',
+    description: 'Transform foto menjadi presiden Indonesia (TRUE Img2Img)',
     usage: '.topresident',
     example: '.topresident',
     isOwner: false,
@@ -16,21 +16,14 @@ const pluginConfig = {
     isEnabled: true
 }
 
-// Model: SDXL (photorealistic)
-const PROMPT = `realistic portrait as Indonesian president,
-formal presidential suit black with red tie,
-authoritative dignified expression,
-studio lighting, photorealistic,
-official presidential portrait style, high detail`
-
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`🇮🇩 *ᴛᴏ ᴘʀᴇsɪᴅᴇɴᴛ (sᴅxʟ)*\n\n> Reply atau kirim gambar dengan caption .topresident`)
+        return m.reply(`🇮🇩 *ᴛᴏ ᴘʀᴇsɪᴅᴇɴᴛ*\n\n> Reply atau kirim gambar dengan caption .topresident\n> _Wajah asli akan dipertahankan!_`)
     }
     
     await m.react('🇮🇩')
-    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan SDXL...\n> _Mohon bersabar..._`)
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan TRUE Img2Img...\n> _Wajah asli akan dipertahankan..._`)
     
     try {
         let mediaBuffer
@@ -45,8 +38,7 @@ async function handler(m, { sock }) {
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        // Use SDXL for photorealistic presidential portrait
-        const result = await nanobanana.generateUniversal(PROMPT)
+        const result = await nanobanana.toPresident(mediaBuffer)
         
         if (!result.success || !result.buffer) {
             await m.react('❌')
@@ -57,7 +49,7 @@ async function handler(m, { sock }) {
         
         await sock.sendMessage(m.chat, {
             image: result.buffer,
-            caption: `🇮🇩 *ᴛᴏ ᴘʀᴇsɪᴅᴇɴᴛ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'SDXL'}_`
+            caption: `🇮🇩 *ᴛᴏ ᴘʀᴇsɪᴅᴇɴᴛ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model}_\n> _TRUE Img2Img_`
         }, { quoted: m })
         
     } catch (error) {

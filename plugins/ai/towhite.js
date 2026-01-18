@@ -4,7 +4,7 @@ const pluginConfig = {
     name: 'towhite',
     alias: ['white', 'putih'],
     category: 'ai',
-    description: 'Transform foto dengan skin tone lebih terang (SDXL)',
+    description: 'Transform kulit menjadi lebih terang (TRUE Img2Img)',
     usage: '.towhite',
     example: '.towhite',
     isOwner: false,
@@ -16,20 +16,14 @@ const pluginConfig = {
     isEnabled: true
 }
 
-// Model: SDXL (photorealistic)
-const PROMPT = `person with fair white skin tone,
-caucasian complexion, same pose, same clothes,
-same background, photorealistic, high quality,
-natural skin texture, even lighting`
-
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`✨ *ᴛᴏ ᴡʜɪᴛᴇ (sᴅxʟ)*\n\n> Reply atau kirim gambar dengan caption .towhite`)
+        return m.reply(`✨ *ᴛᴏ ᴡʜɪᴛᴇ*\n\n> Reply atau kirim gambar dengan caption .towhite\n> _Gambar asli akan dipertahankan!_`)
     }
     
     await m.react('✨')
-    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan SDXL...\n> _Mohon bersabar..._`)
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan TRUE Img2Img...\n> _Gambar asli akan dipertahankan..._`)
     
     try {
         let mediaBuffer
@@ -44,8 +38,7 @@ async function handler(m, { sock }) {
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        // Use SDXL for photorealistic skin transformation
-        const result = await nanobanana.generateUniversal(PROMPT)
+        const result = await nanobanana.toWhite(mediaBuffer)
         
         if (!result.success || !result.buffer) {
             await m.react('❌')
@@ -56,7 +49,7 @@ async function handler(m, { sock }) {
         
         await sock.sendMessage(m.chat, {
             image: result.buffer,
-            caption: `✨ *ᴛᴏ ᴡʜɪᴛᴇ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'SDXL'}_`
+            caption: `✨ *ᴛᴏ ᴡʜɪᴛᴇ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model}_\n> _TRUE Img2Img_`
         }, { quoted: m })
         
     } catch (error) {

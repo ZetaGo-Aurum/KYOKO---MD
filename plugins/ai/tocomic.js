@@ -4,7 +4,7 @@ const pluginConfig = {
     name: 'tocomic',
     alias: ['comic'],
     category: 'ai',
-    description: 'Transform foto menjadi comic style (Counterfeit)',
+    description: 'Transform foto menjadi comic style (TRUE Img2Img)',
     usage: '.tocomic',
     example: '.tocomic',
     isOwner: false,
@@ -16,20 +16,14 @@ const pluginConfig = {
     isEnabled: true
 }
 
-// Model: Counterfeit (high quality illustration)
-const PROMPT = `western comic book style,
-bold outlines, dynamic lighting,
-vibrant colors, high detail,
-comic illustration, marvel dc style`
-
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`🦸 *ᴛᴏ ᴄᴏᴍɪᴄ (ᴄᴏᴜɴᴛᴇʀꜰᴇɪᴛ)*\n\n> Reply atau kirim gambar dengan caption .tocomic`)
+        return m.reply(`🦸 *ᴛᴏ ᴄᴏᴍɪᴄ*\n\n> Reply atau kirim gambar dengan caption .tocomic\n> _Pose asli akan dipertahankan!_`)
     }
     
     await m.react('🦸')
-    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan Counterfeit...\n> _Mohon bersabar..._`)
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan TRUE Img2Img...\n> _Pose asli akan dipertahankan..._`)
     
     try {
         let mediaBuffer
@@ -44,8 +38,7 @@ async function handler(m, { sock }) {
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        // Use Counterfeit for comic/illustration style
-        const result = await nanobanana.generateCounterfeit(PROMPT)
+        const result = await nanobanana.toComic(mediaBuffer)
         
         if (!result.success || !result.buffer) {
             await m.react('❌')
@@ -56,7 +49,7 @@ async function handler(m, { sock }) {
         
         await sock.sendMessage(m.chat, {
             image: result.buffer,
-            caption: `🦸 *ᴛᴏ ᴄᴏᴍɪᴄ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'Counterfeit'}_`
+            caption: `🦸 *ᴛᴏ ᴄᴏᴍɪᴄ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model}_\n> _TRUE Img2Img_`
         }, { quoted: m })
         
     } catch (error) {

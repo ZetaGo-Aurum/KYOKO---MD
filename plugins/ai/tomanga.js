@@ -4,7 +4,7 @@ const pluginConfig = {
     name: 'tomanga',
     alias: ['manga'],
     category: 'ai',
-    description: 'Transform foto menjadi manga style (Counterfeit)',
+    description: 'Transform foto menjadi manga style (TRUE Img2Img)',
     usage: '.tomanga',
     example: '.tomanga',
     isOwner: false,
@@ -16,20 +16,14 @@ const pluginConfig = {
     isEnabled: true
 }
 
-// Model: Counterfeit (high quality manga illustration)
-const PROMPT = `black and white manga style,
-clean ink lineart, screentone shading,
-high contrast, japanese manga panel look,
-detailed manga illustration, masterpiece`
-
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`📖 *ᴛᴏ ᴍᴀɴɢᴀ (ᴄᴏᴜɴᴛᴇʀꜰᴇɪᴛ)*\n\n> Reply atau kirim gambar dengan caption .tomanga`)
+        return m.reply(`📖 *ᴛᴏ ᴍᴀɴɢᴀ*\n\n> Reply atau kirim gambar dengan caption .tomanga\n> _Pose asli akan dipertahankan!_`)
     }
     
     await m.react('📖')
-    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan Counterfeit...\n> _Mohon bersabar..._`)
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan TRUE Img2Img...\n> _Pose asli akan dipertahankan..._`)
     
     try {
         let mediaBuffer
@@ -44,8 +38,7 @@ async function handler(m, { sock }) {
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        // Use Counterfeit for manga style
-        const result = await nanobanana.generateCounterfeit(PROMPT)
+        const result = await nanobanana.toManga(mediaBuffer)
         
         if (!result.success || !result.buffer) {
             await m.react('❌')
@@ -56,7 +49,7 @@ async function handler(m, { sock }) {
         
         await sock.sendMessage(m.chat, {
             image: result.buffer,
-            caption: `📖 *ᴛᴏ ᴍᴀɴɢᴀ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'Counterfeit'}_`
+            caption: `📖 *ᴛᴏ ᴍᴀɴɢᴀ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model}_\n> _TRUE Img2Img_`
         }, { quoted: m })
         
     } catch (error) {

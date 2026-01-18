@@ -4,7 +4,7 @@ const pluginConfig = {
     name: 'tohijab',
     alias: ['hijab'],
     category: 'ai',
-    description: 'Transform foto menjadi berhijab (SDXL)',
+    description: 'Transform foto menjadi berhijab (TRUE Img2Img)',
     usage: '.tohijab',
     example: '.tohijab',
     isOwner: false,
@@ -16,21 +16,14 @@ const pluginConfig = {
     isEnabled: true
 }
 
-// Model: SDXL (photorealistic)
-const PROMPT = `beautiful woman wearing neat modest hijab,
-hijab covering hair and neck completely,
-realistic face, soft lighting,
-photorealistic, natural skin texture, high detail,
-elegant muslim fashion`
-
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`🧕 *ᴛᴏ ʜɪᴊᴀʙ (sᴅxʟ)*\n\n> Reply atau kirim gambar dengan caption .tohijab`)
+        return m.reply(`🧕 *ᴛᴏ ʜɪᴊᴀʙ*\n\n> Reply atau kirim gambar dengan caption .tohijab\n> _Wajah asli akan dipertahankan!_`)
     }
     
     await m.react('🧕')
-    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan SDXL...\n> _Mohon bersabar..._`)
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan TRUE Img2Img...\n> _Wajah asli akan dipertahankan..._`)
     
     try {
         let mediaBuffer
@@ -45,8 +38,7 @@ async function handler(m, { sock }) {
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        // Use SDXL for photorealistic hijab transformation
-        const result = await nanobanana.generateUniversal(PROMPT)
+        const result = await nanobanana.toHijab(mediaBuffer)
         
         if (!result.success || !result.buffer) {
             await m.react('❌')
@@ -57,7 +49,7 @@ async function handler(m, { sock }) {
         
         await sock.sendMessage(m.chat, {
             image: result.buffer,
-            caption: `🧕 *ᴛᴏ ʜɪᴊᴀʙ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'SDXL'}_`
+            caption: `🧕 *ᴛᴏ ʜɪᴊᴀʙ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model}_\n> _TRUE Img2Img_`
         }, { quoted: m })
         
     } catch (error) {

@@ -4,7 +4,7 @@ const pluginConfig = {
     name: 'tochinese',
     alias: ['chinese', 'china'],
     category: 'ai',
-    description: 'Transform foto menjadi chinese art style (MeinaMix)',
+    description: 'Transform foto menjadi chinese art style (TRUE Img2Img)',
     usage: '.tochinese',
     example: '.tochinese',
     isOwner: false,
@@ -16,21 +16,14 @@ const pluginConfig = {
     isEnabled: true
 }
 
-// Model: MeinaMix (semi-realistic asian style)
-const PROMPT = `chinese illustration style,
-soft elegant facial features,
-smooth porcelain-like skin,
-cinematic lighting, high detail,
-asian art style portrait, beautiful`
-
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`🏮 *ᴛᴏ ᴄʜɪɴᴇsᴇ (ᴍᴇɪɴᴀᴍɪx)*\n\n> Reply atau kirim gambar dengan caption .tochinese`)
+        return m.reply(`🏮 *ᴛᴏ ᴄʜɪɴᴇsᴇ*\n\n> Reply atau kirim gambar dengan caption .tochinese\n> _Pose asli akan dipertahankan!_`)
     }
     
     await m.react('🏮')
-    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan MeinaMix...\n> _Mohon bersabar..._`)
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan TRUE Img2Img...\n> _Pose asli akan dipertahankan..._`)
     
     try {
         let mediaBuffer
@@ -45,8 +38,7 @@ async function handler(m, { sock }) {
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        // Use MeinaMix for chinese/asian art style
-        const result = await nanobanana.generateMeina(PROMPT)
+        const result = await nanobanana.toChinese(mediaBuffer)
         
         if (!result.success || !result.buffer) {
             await m.react('❌')
@@ -57,7 +49,7 @@ async function handler(m, { sock }) {
         
         await sock.sendMessage(m.chat, {
             image: result.buffer,
-            caption: `🏮 *ᴛᴏ ᴄʜɪɴᴇsᴇ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'MeinaMix'}_`
+            caption: `🏮 *ᴛᴏ ᴄʜɪɴᴇsᴇ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model}_\n> _TRUE Img2Img_`
         }, { quoted: m })
         
     } catch (error) {

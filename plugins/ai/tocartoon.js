@@ -4,7 +4,7 @@ const pluginConfig = {
     name: 'tocartoon',
     alias: ['cartoon', 'kartun'],
     category: 'ai',
-    description: 'Transform foto menjadi cartoon style (DreamShaper)',
+    description: 'Transform foto menjadi cartoon style (TRUE Img2Img)',
     usage: '.tocartoon',
     example: '.tocartoon',
     isOwner: false,
@@ -16,20 +16,14 @@ const pluginConfig = {
     isEnabled: true
 }
 
-// Model: DreamShaper (best for cartoon/stylized art)
-const PROMPT = `cartoon illustration style,
-same identity, simplified features,
-smooth shading, bright vivid colors,
-clean cartoon render, disney pixar style`
-
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`🎨 *ᴛᴏ ᴄᴀʀᴛᴏᴏɴ (ᴅʀᴇᴀᴍsʜᴀᴘᴇʀ)*\n\n> Reply atau kirim gambar dengan caption .tocartoon`)
+        return m.reply(`🎨 *ᴛᴏ ᴄᴀʀᴛᴏᴏɴ*\n\n> Reply atau kirim gambar dengan caption .tocartoon\n> _Pose asli akan dipertahankan!_`)
     }
     
     await m.react('🎨')
-    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan DreamShaper...\n> _Mohon bersabar..._`)
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan TRUE Img2Img...\n> _Pose asli akan dipertahankan..._`)
     
     try {
         let mediaBuffer
@@ -44,8 +38,7 @@ async function handler(m, { sock }) {
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        // Use DreamShaper for cartoon style
-        const result = await nanobanana.generateDream(PROMPT)
+        const result = await nanobanana.toCartoon(mediaBuffer)
         
         if (!result.success || !result.buffer) {
             await m.react('❌')
@@ -56,7 +49,7 @@ async function handler(m, { sock }) {
         
         await sock.sendMessage(m.chat, {
             image: result.buffer,
-            caption: `🎨 *ᴛᴏ ᴄᴀʀᴛᴏᴏɴ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'DreamShaper'}_`
+            caption: `🎨 *ᴛᴏ ᴄᴀʀᴛᴏᴏɴ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model}_\n> _TRUE Img2Img_`
         }, { quoted: m })
         
     } catch (error) {
