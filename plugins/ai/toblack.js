@@ -53,18 +53,23 @@ async function transformImg2Img(imageUrl, prompt) {
         const encodedImage = encodeURIComponent(imageUrl)
         
         // Construct Img2Img URL
-        // model=flux is generally good for prompt adherence
-        // seed helps stability
+        // Optimizations:
+        // 1. Reduced resolution (1024->768) for faster generation
+        // 2. Timeout increased to 300s (5 mins) for heavy loads
+        // 3. Removed model=flux enforcement (let API route to fastest available) or use turbo if possible
+        
         const seed = Math.floor(Math.random() * 1000000)
-        const api = `https://image.pollinations.ai/prompt/${encodedPrompt}?image=${encodedImage}&width=1024&height=1024&model=flux&seed=${seed}&nologo=true`
+        // Using 768x768 is sufficient offering good speed/quality balance
+        const api = `https://image.pollinations.ai/prompt/${encodedPrompt}?image=${encodedImage}&width=768&height=768&seed=${seed}&nologo=true&enhance=false`
         
         console.log('[toblack] Generatig: ', api)
         
+        // 5 minute timeout to be absolutely safe
         const response = await axios.get(api, {
             responseType: 'arraybuffer',
-            timeout: 120000, // 2 minutes timeout for generation
+            timeout: 300000, 
             headers: {
-                'User-Agent': 'KYOKO-MD-Bot/2.0'
+                'User-Agent': 'KYOKO-MD-Bot/2.1'
             }
         })
         
