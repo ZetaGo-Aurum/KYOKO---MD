@@ -11,16 +11,45 @@ const path = require('path')
 
 require('dotenv').config()
 
-// Read cookies from environment or file
-function getCookies() {
-    // Check for cookie in .env
-    const envCookie = process.env.YOUTUBE_COOKIE
-    if (envCookie) return envCookie
+/**
+ * Parse Netscape cookie format (from browser extensions)
+ */
+function parseNetscapeCookies(content) {
+    const cookies = []
+    const lines = content.split('\n')
     
-    // Check for cookies.txt file
+    for (const line of lines) {
+        // Skip comments and empty lines
+        if (line.startsWith('#') || !line.trim()) continue
+        
+        const parts = line.split('\t')
+        if (parts.length >= 7) {
+            const [domain, , path, secure, expires, name, value] = parts
+            cookies.push({
+                name: name.trim(),
+                value: value.trim(),
+                domain: domain.trim(),
+                path: path.trim(),
+                secure: secure.toLowerCase() === 'true',
+                expires: parseInt(expires) || undefined
+            })
+        }
+    }
+    
+    return cookies
+}
+
+// Read cookies from file
+function getCookies() {
     const cookiePath = path.join(process.cwd(), 'cookies.txt')
+    
     if (fs.existsSync(cookiePath)) {
-        return fs.readFileSync(cookiePath, 'utf-8').trim()
+        const content = fs.readFileSync(cookiePath, 'utf-8')
+        const cookies = parseNetscapeCookies(content)
+        if (cookies.length > 0) {
+            console.log(`[YouTube] Loaded ${cookies.length} cookies from cookies.txt`)
+            return cookies
+        }
     }
     
     return null
@@ -29,15 +58,12 @@ function getCookies() {
 // Create agent with cookies for authentication
 function createAgent() {
     const cookies = getCookies()
-    if (cookies) {
+    if (cookies && cookies.length > 0) {
         try {
-            console.log('[YouTube] Using cookies for authentication...')
-            return ytdl.createAgent(cookies.split(';').map(c => {
-                const [name, value] = c.trim().split('=')
-                return { name, value, domain: '.youtube.com' }
-            }))
+            console.log('[YouTube] Creating agent with cookies...')
+            return ytdl.createAgent(cookies)
         } catch (e) {
-            console.log('[YouTube] Cookie parsing failed:', e.message)
+            console.log('[YouTube] Agent creation failed:', e.message)
         }
     }
     return undefined
