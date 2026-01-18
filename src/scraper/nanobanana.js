@@ -1,5 +1,6 @@
 const axios = require('axios');
 const fs = require('fs');
+require('dotenv').config(); // Ensure env vars are loaded explicitly
 
 /**
  * Use Puter AI for Image-to-Image transformation
