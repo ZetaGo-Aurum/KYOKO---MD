@@ -3,100 +3,82 @@ const fs = require('fs');
 
 /**
  * Use Puter AI for Image-to-Image transformation
- * DIRECT API IMPLEMENTATION (removes unstable @heyputer/puter.js library dependency)
+ * HYBRID IMPLEMENTATION:
+ * 1. Tries to use @heyputer/puter.js library if `puterAuthToken` is present
+ * 2. Falls back to Pollinations.ai if token is missing or library fails
  * 
  * @param {Buffer} imageBuffer - Input image buffer
  * @param {string} prompt - Prompt for transformation
  * @returns {Promise<Object>} Result object { success: boolean, buffer?: Buffer, error?: string }
  */
 async function puterImg2Img(imageBuffer, prompt) {
-    try {
-        // console.log('[Puter] Processing Img2Img with Gemini 2.5 Flash (Direct API)...'); // Reduced logging
+    // 1. Check for Auth Token first
+    const token = process.env.puterAuthToken || process.env.PUTER_TOKEN;
 
-        if (!process.env.PUTER_TOKEN) {
-            console.warn('[Puter] Warning: PUTER_TOKEN is missing. Using Pollinations AI Fallback.');
-            return await pollinationsImg2Img(imageBuffer, prompt);
+    if (!token) {
+        console.warn('[Puter] No token found. Using Pollinations AI Fallback.');
+        return await pollinationsImg2Img(imageBuffer, prompt);
+    }
+
+    // 2. Try using the Puter.js library
+    try {
+        console.log('[Puter] Token found. Attempting to use Puter.js library...');
+        
+        // Lazy load to prevent startup crashes
+        let puter;
+        try {
+            // Using the user-suggested init method
+            const { init } = require('@heyputer/puter.js/src/init.cjs');
+            puter = init(token);
+        } catch (libErr) {
+            console.warn('[Puter] Library init failed, trying alternate import or fallback:', libErr.message);
+            // Fallback to simpler require if specific path fails
+            try {
+                const puterLib = require('@heyputer/puter.js');
+                puter = new puterLib(token);
+            } catch (e) {
+                throw new Error('Failed to load Puter.js library: ' + e.message);
+            }
         }
+
+        console.log('[Puter] Processing Img2Img with Gemini 2.5 Flash...');
 
         const base64Image = imageBuffer.toString('base64');
-        const apiUrl = 'https://api.puter.com/drivers/call';
-        
-        const payload = {
-            "interface": "puter-ai-2",
-            "method": "txt2img",
-            "args": {
-                "prompt": prompt,
-                "input_image": base64Image,
-                "input_image_mime_type": "image/jpeg",
-                "model": "gemini-2.5-flash-latest"
-            }
-        };
+        const mimeType = 'image/jpeg'; 
 
-        const headers = {
-            'Content-Type': 'application/json',
-            'Origin': 'https://puter.com',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Authorization': `Bearer ${process.env.PUTER_TOKEN}`
-        };
-
-        const response = await axios.post(apiUrl, payload, { 
-            headers, 
-            timeout: 120000 // Extended timeout for AI processing
+        const imageElement = await puter.ai.txt2img(prompt, {
+            input_image: base64Image,
+            input_image_mime_type: mimeType,
+            model: 'gemini-2.5-flash-latest'
         });
 
-        const resultData = response.data?.result;
+        let src = imageElement.src || imageElement.url;
+        if (!src && typeof imageElement === 'string') src = imageElement;
 
-        if (!resultData) {
-            throw new Error('No result returned from API');
-        }
+        if (!src) throw new Error('No image source returned from Puter AI');
 
-        // Handle Base64 Data URI result
-        if (typeof resultData === 'string' && resultData.startsWith('data:image')) {
-             const base64Data = resultData.split(',')[1];
-             return {
+        if (src.startsWith('data:image')) {
+            const base64Data = src.split(',')[1];
+            return {
                 success: true,
                 buffer: Buffer.from(base64Data, 'base64')
-             };
+            };
+        } else if (src.startsWith('http')) {
+            const imgRes = await axios.get(src, { responseType: 'arraybuffer' });
+            return {
+                success: true,
+                buffer: Buffer.from(imgRes.data)
+            };
+        } else {
+            throw new Error('Unknown output format from Puter.js');
         }
-        
-        // Handle URL result
-        let url = resultData;
-        if (typeof resultData === 'object' && resultData.url) {
-            url = resultData.url;
-        } else if (typeof resultData === 'object' && resultData.src) {
-            url = resultData.src;
-        }
-        
-        if (typeof url === 'string' && url.startsWith('http')) {
-            const imgRes = await axios.get(url, { 
-                responseType: 'arraybuffer',
-                timeout: 30000
-            });
-            return { success: true, buffer: Buffer.from(imgRes.data) };    
-        }
-
-        console.error('[Puter] Unknown response format:', typeof resultData, resultData);
-        throw new Error('Format response API tidak dikenali');
 
     } catch (error) {
-        console.error('[Puter] API Error:', error.message);
-        
-        // Handle specific 401 error
-        if (error.response?.status === 401) {
-            return { 
-                success: false, 
-                error: 'Token Puter.js Expired/Invalid. Cek kembali PUTER_TOKEN di .env' 
-            };
-        }
-        
-        return { 
-            success: false, 
-            error: `Gagal proses AI: ${error.message}` 
-        };
+        console.error('[Puter] Library/API Error:', error.message);
+        console.log('[Puter] Switching to Pollinations Fallback...');
+        return await pollinationsImg2Img(imageBuffer, prompt);
     }
 }
-
-
 
 /**
  * Fallback to Pollinations.ai (Free, No Token)
