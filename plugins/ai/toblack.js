@@ -5,7 +5,7 @@ const pluginConfig = {
     name: 'toblack',
     alias: ['black', 'hitam'],
     category: 'ai',
-    description: 'Transform karakter menjadi berkulit hitam pekat (Img2Img)',
+    description: 'Transform karakter menjadi berkulit hitam pekat (Preserve Details)',
     usage: '.toblack',
     example: '.toblack',
     isOwner: false,
@@ -19,7 +19,6 @@ const pluginConfig = {
 
 /**
  * Upload image to Catbox.moe
- * More stable and faster than tmpfiles for API usage
  */
 async function uploadToCatbox(buffer) {
     try {
@@ -30,7 +29,7 @@ async function uploadToCatbox(buffer) {
 
         const response = await axios.post('https://catbox.moe/user/api.php', form, {
             headers: form.getHeaders(),
-            timeout: 60000 // 60s timeout for upload
+            timeout: 60000 
         })
 
         if (response.data && response.data.startsWith('http')) {
@@ -45,31 +44,32 @@ async function uploadToCatbox(buffer) {
 
 /**
  * Pollinations.ai Img2Img Transformation
- * Uses ?image=URL parameter to preserve original composition
+ * Optimized for STRICT detail preservation
  */
 async function transformImg2Img(imageUrl, prompt) {
     try {
         const encodedPrompt = encodeURIComponent(prompt)
         const encodedImage = encodeURIComponent(imageUrl)
         
-        // Construct Img2Img URL
-        // Optimizations:
-        // 1. Reduced resolution (1024->768) for faster generation
-        // 2. Timeout increased to 300s (5 mins) for heavy loads
-        // 3. Removed model=flux enforcement (let API route to fastest available) or use turbo if possible
+        // Optimizations for preserving details:
+        // 1. negative_prompt: prevent changing key features
+        // 2. nologo=true
+        // 3. enhance=false (prevent AI from hallucinations)
+        
+        const negPrompt = encodeURIComponent("changing clothes, changing background, changing pose, different hair style, different eye color, bright skin, white skin, pale skin, monochrome, grayscale, low quality, bad anatomy")
         
         const seed = Math.floor(Math.random() * 1000000)
-        // Using 768x768 is sufficient offering good speed/quality balance
-        const api = `https://image.pollinations.ai/prompt/${encodedPrompt}?image=${encodedImage}&width=768&height=768&seed=${seed}&nologo=true&enhance=false`
         
-        console.log('[toblack] Generatig: ', api)
+        // Using `enhance=false` is KEY to keeping original style
+        const api = `https://image.pollinations.ai/prompt/${encodedPrompt}?image=${encodedImage}&width=768&height=768&seed=${seed}&nologo=true&enhance=false&negative_prompt=${negPrompt}`
         
-        // 5 minute timeout to be absolutely safe
+        console.log('[toblack] Generating: ', api)
+        
         const response = await axios.get(api, {
             responseType: 'arraybuffer',
-            timeout: 300000, 
+            timeout: 300000, // 5 mins
             headers: {
-                'User-Agent': 'KYOKO-MD-Bot/2.1'
+                'User-Agent': 'KYOKO-MD-Bot/2.2'
             }
         })
         
@@ -79,9 +79,7 @@ async function transformImg2Img(imageUrl, prompt) {
         }
     } catch (error) {
         console.error('[toblack] Transform Error:', error.message)
-        // Check for specific error types
         if (error.code === 'ECONNABORTED') return { success: false, error: 'Waktu habis (timeout), server sibuk' }
-        if (error.response?.status === 429) return { success: false, error: 'Terlalu banyak request, coba lagi nanti' }
         return { success: false, error: error.message }
     }
 }
@@ -91,14 +89,15 @@ async function handler(m, { sock }) {
     
     if (!isImage) {
         return m.reply(
-            `🖤 *ᴛᴏ ʙʟᴀᴄᴋ (ɪᴍɢ2ɪᴍɢ)*\n\n` +
-            `> Mengubah kulit karakter menjadi hitam pekat\n` +
+            `🖤 *ᴛᴏ ʙʟᴀᴄᴋ (ᴘʀᴇsᴇʀᴠᴇ)*\n\n` +
+            `> Ubah warna kulit jadi hitam pekat TANPA ubah desain karakter\n` +
             `> Reply atau kirim gambar dengan: ${m.prefix}hitam`
         )
     }
     
     await m.react('🖤')
-    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> 1. Uploading image...\n> 2. Transforming skin tone...\n> _Mohon bersabar, proses bisa memakan waktu 1 menit_`)
+    // Processing message
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Mengubah warna kulit & mempertahankan detail asli...\n> _Mohon tunggu..._`)
     
     try {
         // 1. Download image
@@ -118,9 +117,9 @@ async function handler(m, { sock }) {
         const imageUrl = await uploadToCatbox(mediaBuffer)
         console.log('[toblack] Uploaded to:', imageUrl)
         
-        // 3. Transform using Img2Img
-        // Strong prompt for dark skin black complexion
-        const prompt = "((very dark black skin)), ((ebony skin tone)), ((deep darkest complexion)), african descendant, same character, same pose, same clothing, same background, exact details, high quality, masterpiece, 8k resolution"
+        // 3. Transform using Img2Img with PRESERVE prompt
+        // Using "recolor" keyword helps AI understand we only want to change color
+        const prompt = "recolor skin to very dark black skin tone, deep ebony complexion, keep everything else exactly same, same hair color, same eye color, same clothing, same background, same art style, high fidelity"
         
         const result = await transformImg2Img(imageUrl, prompt)
         
@@ -139,7 +138,7 @@ async function handler(m, { sock }) {
             image: result.buffer,
             caption: `🖤 *ᴛᴏ ʙʟᴀᴄᴋ*\n\n` +
                 `> ᴛʀᴀɴsꜰᴏʀᴍ sᴜᴄᴄᴇss\n` +
-                `> _Img2Img Dark Skin v2_\n` +
+                `> _Mode: Strict Detail Preservation_\n` +
                 `> _Powered by Pollinations.ai_`
         }, { quoted: m })
         

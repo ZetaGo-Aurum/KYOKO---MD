@@ -1,4 +1,4 @@
 @echo off
 git add -A
-git commit -m "fix toblack timeout - optimize resolution 768px and increase timeout 300s"
+git commit -m "fix toblack structure - strict detail preservation using negative prompts and enhance=false"
 git push origin main
