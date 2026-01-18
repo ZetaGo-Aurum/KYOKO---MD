@@ -1,96 +1,148 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const axios = require('axios');
 require('dotenv').config();
 
 /**
  * Gemini AI Chat - Using Official Google AI SDK
- * Supports text chat and conversation history
+ * With fallback to free AI APIs when quota exceeded
+ * 
+ * Uses gemini-1.5-flash for FREE TIER (higher quota than 2.0)
  */
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// Initialize Gemini
-let genAI = null;
-let model = null;
+// Available models with different quotas
+const MODELS = [
+    'gemini-1.5-flash',      // Best free tier quota
+    'gemini-1.5-flash-8b',   // Even lower usage
+    'gemini-2.0-flash-lite'  // Lite version
+];
 
-function initGemini() {
-    if (!GEMINI_API_KEY) {
-        throw new Error('GEMINI_API_KEY tidak ditemukan di .env');
-    }
-    if (!genAI) {
-        genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    }
-    return model;
+let currentModelIndex = 0;
+
+/**
+ * Get next model if quota exceeded
+ */
+function getNextModel() {
+    currentModelIndex = (currentModelIndex + 1) % MODELS.length;
+    return MODELS[currentModelIndex];
 }
 
 /**
- * Simple text generation
+ * Simple text generation with model rotation on quota error
  */
 async function gemini({ message, instruction = '', sessionId = null }) {
     try {
         if (!message) throw new Error('Message is required.');
         
-        const geminiModel = initGemini();
-        
-        // Build prompt with instruction if provided
+        // Build prompt
         let fullPrompt = message;
         if (instruction) {
             fullPrompt = `${instruction}\n\nUser: ${message}`;
         }
         
-        // Generate response
-        const result = await geminiModel.generateContent(fullPrompt);
-        const response = await result.response;
-        const text = response.text();
+        // Try Gemini API first
+        if (GEMINI_API_KEY) {
+            for (let attempt = 0; attempt < MODELS.length; attempt++) {
+                try {
+                    const modelName = MODELS[(currentModelIndex + attempt) % MODELS.length];
+                    console.log(`[Gemini] Trying model: ${modelName}...`);
+                    
+                    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+                    const model = genAI.getGenerativeModel({ model: modelName });
+                    
+                    const result = await model.generateContent(fullPrompt);
+                    const response = await result.response;
+                    const text = response.text();
+                    
+                    console.log(`[Gemini] ✓ Success with ${modelName}`);
+                    return { text, sessionId: null };
+                    
+                } catch (error) {
+                    if (error.message.includes('429') || error.message.includes('quota')) {
+                        console.log(`[Gemini] Quota exceeded, trying next model...`);
+                        continue;
+                    }
+                    throw error;
+                }
+            }
+        }
         
-        return {
-            text: text,
-            sessionId: null // Simplified - no session management for now
-        };
+        // Fallback to free AI APIs
+        console.log('[Gemini] All models quota exceeded, trying fallback APIs...');
+        return await fallbackAI(fullPrompt);
         
     } catch (error) {
-        throw new Error(`Gemini Error: ${error.message}`);
+        // Try fallback on any error
+        console.log(`[Gemini] Error: ${error.message}, trying fallback...`);
+        try {
+            return await fallbackAI(message);
+        } catch (fallbackError) {
+            throw new Error(`Gemini Error: ${error.message}`);
+        }
     }
 }
 
 /**
- * Chat with history (for conversation continuity)
+ * Fallback to free AI APIs when Gemini quota exceeded
  */
-async function geminiChat(messages, instruction = '') {
-    try {
-        const geminiModel = initGemini();
+async function fallbackAI(message) {
+    const fallbackAPIs = [
+        // DeepInfra free tier
+        async () => {
+            console.log('[Fallback] Trying DeepInfra...');
+            const { data } = await axios.post('https://api.deepinfra.com/v1/openai/chat/completions', {
+                model: 'meta-llama/Meta-Llama-3.1-8B-Instruct',
+                messages: [{ role: 'user', content: message }]
+            }, {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 60000
+            });
+            return { text: data.choices[0].message.content };
+        },
         
-        // Convert messages to Gemini format
-        const history = messages.slice(0, -1).map(msg => ({
-            role: msg.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: msg.content }]
-        }));
+        // Groq free tier
+        async () => {
+            console.log('[Fallback] Trying Groq...');
+            const GROQ_KEY = process.env.GROQ_API_KEY;
+            if (!GROQ_KEY) throw new Error('No GROQ_API_KEY');
+            
+            const { data } = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+                model: 'llama-3.1-8b-instant',
+                messages: [{ role: 'user', content: message }]
+            }, {
+                headers: { 
+                    'Authorization': `Bearer ${GROQ_KEY}`,
+                    'Content-Type': 'application/json' 
+                },
+                timeout: 60000
+            });
+            return { text: data.choices[0].message.content };
+        },
         
-        const chat = geminiModel.startChat({
-            history: history,
-            generationConfig: {
-                maxOutputTokens: 2048,
-            },
-        });
-        
-        // Get last message
-        const lastMessage = messages[messages.length - 1];
-        let prompt = lastMessage.content;
-        if (instruction) {
-            prompt = `${instruction}\n\n${prompt}`;
+        // NekoLabs API (original)
+        async () => {
+            console.log('[Fallback] Trying NekoLabs...');
+            const { data } = await axios.get(
+                `https://api.nekolabs.web.id/txt.gen/gemini/3-flash?text=${encodeURIComponent(message)}`,
+                { timeout: 60000 }
+            );
+            if (data?.success && data?.result) {
+                return { text: data.result };
+            }
+            throw new Error('NekoLabs failed');
         }
-        
-        const result = await chat.sendMessage(prompt);
-        const response = await result.response;
-        
-        return {
-            text: response.text(),
-            role: 'assistant'
-        };
-        
-    } catch (error) {
-        throw new Error(`Gemini Chat Error: ${error.message}`);
+    ];
+    
+    for (const api of fallbackAPIs) {
+        try {
+            return await api();
+        } catch (e) {
+            console.log(`[Fallback] Failed: ${e.message}`);
+        }
     }
+    
+    throw new Error('Semua API AI gagal. Tunggu beberapa menit dan coba lagi.');
 }
 
 /**
@@ -102,31 +154,45 @@ async function geminiVision(imageBuffer, prompt = 'Describe this image in detail
             throw new Error('GEMINI_API_KEY tidak ditemukan di .env');
         }
         
-        const genAIVision = new GoogleGenerativeAI(GEMINI_API_KEY);
-        const visionModel = genAIVision.getGenerativeModel({ model: 'gemini-2.0-flash' });
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
         
-        // Convert buffer to base64
-        const base64Image = imageBuffer.toString('base64');
+        // Try different vision models
+        const visionModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b'];
         
-        const result = await visionModel.generateContent([
-            prompt,
-            {
-                inlineData: {
-                    mimeType: 'image/jpeg',
-                    data: base64Image
+        for (const modelName of visionModels) {
+            try {
+                const model = genAI.getGenerativeModel({ model: modelName });
+                const base64Image = imageBuffer.toString('base64');
+                
+                const result = await model.generateContent([
+                    prompt,
+                    { inlineData: { mimeType: 'image/jpeg', data: base64Image } }
+                ]);
+                
+                const response = await result.response;
+                return { text: response.text(), success: true };
+                
+            } catch (e) {
+                if (e.message.includes('429') || e.message.includes('quota')) {
+                    continue;
                 }
+                throw e;
             }
-        ]);
+        }
         
-        const response = await result.response;
-        return {
-            text: response.text(),
-            success: true
-        };
+        throw new Error('Vision API quota exceeded');
         
     } catch (error) {
         throw new Error(`Gemini Vision Error: ${error.message}`);
     }
+}
+
+/**
+ * Chat with history
+ */
+async function geminiChat(messages, instruction = '') {
+    const lastMessage = messages[messages.length - 1];
+    return gemini({ message: lastMessage.content, instruction });
 }
 
 module.exports = gemini;
