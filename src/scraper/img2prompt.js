@@ -1,35 +1,42 @@
-const axios = require('axios')
-const fs = require('fs')
+const { geminiVision } = require('./gemini')
 
-async function imgtoprompt(media){
-  try{
-    const base64 = fs.readFileSync(media).toString('base64')
+/**
+ * Image to Prompt - Describe an image using AI
+ * Uses Gemini Vision API
+ */
 
-    const r = await axios.post(
-      'https://imageprompt.org/api/ai/prompts/image',
-      {
-        base64Url: `data:image/webp;base64,${base64}`,
-        imageModelId: 0,
-        language: 'en'
-      },
-      {
-        headers:{
-          'User-Agent':'Mozilla/5.0 (Linux; Android 10)',
-          'Content-Type':'application/json',
-          origin:'https://imageprompt.org',
-          referer:'https://imageprompt.org/image-to-prompt'
+require('dotenv').config()
+
+async function img2prompt(imageBuffer) {
+    try {
+        if (!imageBuffer || !Buffer.isBuffer(imageBuffer)) {
+            throw new Error('Image buffer required')
         }
-      }
-    )
 
-    return {
-      prompt: r.data.prompt,
-      generatedAt: r.data.generatedAt
+        console.log('[Img2Prompt] Using Gemini Vision...')
+        
+        const result = await geminiVision(
+            imageBuffer, 
+            'Describe this image in detail. Include the main subjects, art style, colors, composition, and mood. Format the description as a prompt that could be used to generate a similar image.'
+        )
+
+        if (result?.text) {
+            console.log('[Img2Prompt] ✓ Success')
+            return {
+                success: true,
+                prompt: result.text
+            }
+        }
+
+        throw new Error('No description generated')
+
+    } catch (e) {
+        // Fallback to simple description request
+        return { 
+            success: false, 
+            error: e.message 
+        }
     }
-
-  }catch(e){
-    return { status:'eror', msg: e.message }
-  }
 }
 
-module.exports = imgtoprompt
+module.exports = img2prompt

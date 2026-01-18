@@ -1,17 +1,14 @@
 /**
  * Spotify Scraper - KYOKO MD
- * Alternative implementation without bycf dependency
- * Uses public APIs for Spotify download
- * Developer: ZetaGo-Aurum
+ * Multi-API fallback for reliability
  */
 
 const axios = require("axios");
 
 const CONFIG = {
     HEADERS: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
     }
 };
 
@@ -22,24 +19,25 @@ const getTrackId = (url) => {
 
 const spotify = {
     /**
-     * Search Spotify tracks using public API
+     * Search Spotify tracks
      */
     search: async (query) => {
         try {
+            // Try spotisongdownloader
             const { data } = await axios.get(
-                `https://api.fabdl.com/spotify/search?query=${encodeURIComponent(query)}`,
+                `https://api.spotisongdownloader.com/getResults.php?query=${encodeURIComponent(query)}`,
                 { headers: CONFIG.HEADERS, timeout: 15000 }
             );
             
-            if (data.result && data.result.tracks) {
+            if (data?.results) {
                 return {
                     status: true,
-                    result: data.result.tracks.map(t => ({
+                    result: data.results.map(t => ({
                         title: t.name,
-                        artist: t.artists,
-                        url: `https://open.spotify.com/track/${t.id}`,
+                        artist: t.artist,
+                        url: t.link,
                         id: t.id,
-                        duration: t.duration_ms,
+                        duration: t.duration,
                         image: t.image
                     }))
                 };
@@ -52,56 +50,72 @@ const spotify = {
     },
 
     /**
-     * Download Spotify track
+     * Download Spotify track with multiple fallbacks
      */
     download: async (urlOrId) => {
         try {
             const trackId = getTrackId(urlOrId);
             
-            // Method 1: Try fabdl.com API
+            // Method 1: spotisongdownloader.com
             try {
-                const getUrl = `https://api.fabdl.com/spotify/get?url=https://open.spotify.com/track/${trackId}`;
-                const { data: trackData } = await axios.get(getUrl, { 
-                    headers: CONFIG.HEADERS, 
-                    timeout: 15000 
-                });
+                console.log('[Spotify] Trying spotisongdownloader...');
+                const { data } = await axios.get(
+                    `https://api.spotisongdownloader.com/getTrack.php?url=https://open.spotify.com/track/${trackId}`,
+                    { headers: CONFIG.HEADERS, timeout: 20000 }
+                );
                 
-                if (trackData.result) {
-                    const { result } = trackData;
-                    const gid = result.gid;
-                    const taskId = result.id;
-                    
-                    // Get download link
-                    const convertUrl = `https://api.fabdl.com/spotify/mp3-convert-task/${gid}/${taskId}`;
-                    const { data: convertData } = await axios.get(convertUrl, { 
-                        headers: CONFIG.HEADERS, 
-                        timeout: 30000 
-                    });
-                    
-                    if (convertData.result && convertData.result.download_url) {
-                        return {
-                            status: true,
-                            metadata: {
-                                title: result.name || result.title,
-                                artist: result.artists || 'Unknown',
-                                album: result.album || 'Unknown',
-                                cover: result.image || '',
-                                releaseDate: result.release_date || '',
-                                duration: result.duration_ms
-                            },
-                            download: {
-                                mp3: `https://api.fabdl.com${convertData.result.download_url}`,
-                                flac: null
-                            }
-                        };
-                    }
+                if (data?.link) {
+                    return {
+                        status: true,
+                        metadata: {
+                            title: data.name || data.title || 'Unknown',
+                            artist: data.artist || 'Unknown',
+                            album: data.album || 'Unknown',
+                            cover: data.image || data.cover || '',
+                            duration: data.duration
+                        },
+                        download: {
+                            mp3: data.link,
+                            flac: null
+                        }
+                    };
                 }
-            } catch (fabdlError) {
-                console.log('[Spotify] fabdl method failed, trying alternative...');
+            } catch (e) {
+                console.log('[Spotify] Method 1 failed');
             }
             
-            // Method 2: Try spotifydown.com API
+            // Method 2: spotifymate.com
             try {
+                console.log('[Spotify] Trying spotifymate...');
+                const { data } = await axios.post('https://api.spotifymate.com/getLinks', {
+                    url: `https://open.spotify.com/track/${trackId}`
+                }, { 
+                    headers: { ...CONFIG.HEADERS, 'Content-Type': 'application/json' },
+                    timeout: 20000 
+                });
+                
+                if (data?.link) {
+                    return {
+                        status: true,
+                        metadata: {
+                            title: data.title || 'Unknown',
+                            artist: data.artists || 'Unknown',
+                            album: data.album || 'Unknown',
+                            cover: data.cover || ''
+                        },
+                        download: {
+                            mp3: data.link,
+                            flac: null
+                        }
+                    };
+                }
+            } catch (e) {
+                console.log('[Spotify] Method 2 failed');
+            }
+            
+            // Method 3: spotifydown.com API
+            try {
+                console.log('[Spotify] Trying spotifydown...');
                 const { data: spotifyDown } = await axios.get(
                     `https://api.spotifydown.com/download/${trackId}`,
                     {
@@ -121,8 +135,7 @@ const spotify = {
                             title: spotifyDown.metadata?.title || spotifyDown.title || 'Unknown',
                             artist: spotifyDown.metadata?.artists || spotifyDown.artists || 'Unknown',
                             album: spotifyDown.metadata?.album || 'Unknown',
-                            cover: spotifyDown.metadata?.cover || spotifyDown.cover || '',
-                            releaseDate: ''
+                            cover: spotifyDown.metadata?.cover || spotifyDown.cover || ''
                         },
                         download: {
                             mp3: spotifyDown.link,
@@ -130,35 +143,48 @@ const spotify = {
                         }
                     };
                 }
-            } catch (spotifydownError) {
-                console.log('[Spotify] spotifydown method failed');
+            } catch (e) {
+                console.log('[Spotify] Method 3 failed');
             }
             
-            // Method 3: Try ssyoutube/savefrom style API
+            // Method 4: fabdl.com (original)
             try {
-                const { data: altData } = await axios.get(
-                    `https://api.downloaderbot.com/spotify/download?url=https://open.spotify.com/track/${trackId}`,
-                    { headers: CONFIG.HEADERS, timeout: 20000 }
-                );
+                console.log('[Spotify] Trying fabdl...');
+                const getUrl = `https://api.fabdl.com/spotify/get?url=https://open.spotify.com/track/${trackId}`;
+                const { data: trackData } = await axios.get(getUrl, { 
+                    headers: CONFIG.HEADERS, 
+                    timeout: 15000 
+                });
                 
-                if (altData.status && altData.data?.link) {
-                    return {
-                        status: true,
-                        metadata: {
-                            title: altData.data.title || 'Unknown',
-                            artist: altData.data.artist || 'Unknown',
-                            album: altData.data.album || 'Unknown',
-                            cover: altData.data.cover || '',
-                            releaseDate: ''
-                        },
-                        download: {
-                            mp3: altData.data.link,
-                            flac: null
-                        }
-                    };
+                if (trackData.result) {
+                    const { result } = trackData;
+                    const gid = result.gid;
+                    const taskId = result.id;
+                    
+                    const convertUrl = `https://api.fabdl.com/spotify/mp3-convert-task/${gid}/${taskId}`;
+                    const { data: convertData } = await axios.get(convertUrl, { 
+                        headers: CONFIG.HEADERS, 
+                        timeout: 30000 
+                    });
+                    
+                    if (convertData.result && convertData.result.download_url) {
+                        return {
+                            status: true,
+                            metadata: {
+                                title: result.name || result.title,
+                                artist: result.artists || 'Unknown',
+                                album: result.album || 'Unknown',
+                                cover: result.image || ''
+                            },
+                            download: {
+                                mp3: `https://api.fabdl.com${convertData.result.download_url}`,
+                                flac: null
+                            }
+                        };
+                    }
                 }
-            } catch (altError) {
-                console.log('[Spotify] Alternative method failed');
+            } catch (e) {
+                console.log('[Spotify] Method 4 failed');
             }
             
             return { status: false, msg: 'Semua metode download gagal. Coba lagi nanti.' };

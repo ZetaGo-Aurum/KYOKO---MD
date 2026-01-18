@@ -1,66 +1,49 @@
-const axios = require("axios");
-const cheerio = require("cheerio");
+const axios = require('axios')
 
-const client = axios.create({
-  withCredentials: true,
-  headers: {
-    origin: "https://unrestrictedaiimagegenerator.com",
-    referer: "https://unrestrictedaiimagegenerator.com/",
-    "user-agent":
-      "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Mobile Safari/537.36",
-  },
-});
+/**
+ * Text-to-Image Scraper using HuggingFace API
+ * Kept for backward compatibility, but use nanobanana.generateImage() instead
+ */
 
-async function unrestrictedai(prompt, style = "anime") {
-  const styles = [
-    "photorealistic",
-    "digital-art",
-    "impressionist",
-    "anime",
-    "fantasy",
-    "sci-fi",
-    "vintage",
-  ];
+require('dotenv').config()
 
-  if (!prompt) throw new Error("Prompt is required");
-  if (!styles.includes(style))
-    throw new Error(`Available styles: ${styles.join(", ")}`);
+const HF_TOKEN = process.env.HF_TOKEN
 
-  const { data: html, headers } = await client.get(
-    "https://unrestrictedaiimagegenerator.com/"
-  );
-
-  const cookies = headers["set-cookie"]?.join("; ");
-  if (cookies) client.defaults.headers.Cookie = cookies;
-
-  const $ = cheerio.load(html);
-  const nonce = $('input[name="_wpnonce"]').val();
-  if (!nonce) throw new Error("Nonce not found");
-
-  const form = new URLSearchParams({
-    generate_image: "true",
-    image_description: prompt,
-    image_style: style,
-    _wpnonce: nonce,
-  });
-
-  const { data: resultHtml } = await client.post(
-    "https://unrestrictedaiimagegenerator.com/",
-    form.toString(),
-    {
-      headers: {
-        "content-type": "application/x-www-form-urlencoded",
-      },
+async function txt2img(prompt, style = 'default') {
+    if (!prompt) throw new Error('Prompt is required')
+    
+    const modelMap = {
+        'default': 'stabilityai/stable-diffusion-xl-base-1.0',
+        'anime': 'stablediffusionapi/anything-v5',
+        'realistic': 'Lykon/dreamshaper-8',
+        'photorealistic': 'stabilityai/stable-diffusion-xl-base-1.0'
     }
-  );
-
-  const $$ = cheerio.load(resultHtml);
-  const img = $$("img#resultImage").attr("src");
-
-  if (!img) throw new Error("Image not found");
-
-  return img;
+    
+    const modelId = modelMap[style] || modelMap['default']
+    const apiUrl = `https://router.huggingface.co/hf-inference/models/${modelId}`
+    
+    try {
+        if (!HF_TOKEN) {
+            throw new Error('HF_TOKEN tidak ditemukan di .env')
+        }
+        
+        const response = await axios.post(apiUrl, {
+            inputs: prompt
+        }, {
+            headers: {
+                'Authorization': `Bearer ${HF_TOKEN}`,
+                'Content-Type': 'application/json',
+                'Accept': 'image/png'
+            },
+            responseType: 'arraybuffer',
+            timeout: 120000
+        })
+        
+        return Buffer.from(response.data)
+        
+    } catch (error) {
+        throw new Error(`TXT2IMG Error: ${error.message}`)
+    }
 }
 
-module.exports = unrestrictedai;
-
+module.exports = txt2img

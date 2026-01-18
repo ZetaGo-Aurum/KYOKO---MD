@@ -1,12 +1,12 @@
-const axios = require('axios')
+const gemini = require('../../src/scraper/gemini')
 
 const pluginConfig = {
-    name: 'gemini3',
-    alias: ['gemini', 'geminiflash'],
+    name: 'gemini',
+    alias: ['gemini3', 'geminiflash', 'ai'],
     category: 'ai',
-    description: 'Chat dengan Gemini 3 Flash',
-    usage: '.gemini3 <pertanyaan>',
-    example: '.gemini3 Hai apa kabar?',
+    description: 'Chat dengan Google Gemini AI',
+    usage: '.gemini <pertanyaan>',
+    example: '.gemini Hai apa kabar?',
     isOwner: false,
     isPremium: false,
     isGroup: false,
@@ -19,25 +19,24 @@ const pluginConfig = {
 async function handler(m, { sock }) {
     const text = m.args.join(' ')
     if (!text) {
-        return m.reply(`✨ *ɢᴇᴍɪɴɪ 3*\n\n> Masukkan pertanyaan\n\n\`Contoh: ${m.prefix}gemini3 Hai apa kabar?\``)
+        return m.reply(`✨ *ɢᴇᴍɪɴɪ ᴀɪ*\n\n> Chat dengan AI powered by Google\n\n\`Contoh: ${m.prefix}gemini Hai apa kabar?\``)
     }
     
-    m.react('✨')
+    await m.react('✨')
     
     try {
-        const url = `https://api.nekolabs.web.id/txt.gen/gemini/3-flash?text=${encodeURIComponent(text)}`
-        const { data } = await axios.get(url, { timeout: 60000 })
+        const result = await gemini({ message: text })
         
-        if (!data?.success || !data?.result) {
-            m.react('❌')
-            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> API tidak merespon`)
+        if (!result?.text) {
+            await m.react('❌')
+            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Tidak ada respon dari AI`)
         }
         
-        m.react('✅')
-        await m.reply(`✨ *ɢᴇᴍɪɴɪ 3*\n\n${data.result}`)
+        await m.react('✅')
+        await m.reply(`✨ *ɢᴇᴍɪɴɪ ᴀɪ*\n\n${result.text}`)
         
     } catch (error) {
-        m.react('❌')
+        await m.react('❌')
         m.reply(`❌ *ᴇʀʀᴏʀ*\n\n> ${error.message}`)
     }
 }

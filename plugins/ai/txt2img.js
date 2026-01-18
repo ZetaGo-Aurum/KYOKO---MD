@@ -1,12 +1,12 @@
-const txt2img = require('../../src/scraper/txt2img')
+const nanobanana = require('../../src/scraper/nanobanana')
 
 const pluginConfig = {
     name: 'txt2img',
-    alias: ['texttoimage', 't2i', 'imagine'],
+    alias: ['imagine', 'generate', 'genimg'],
     category: 'ai',
-    description: 'Generate gambar dari teks dengan AI',
-    usage: '.txt2img <prompt> | <style>',
-    example: '.txt2img beautiful sunset | anime',
+    description: 'Generate gambar dari teks menggunakan AI',
+    usage: '.txt2img <prompt>',
+    example: '.txt2img beautiful sunset over mountains',
     isOwner: false,
     isPremium: false,
     isGroup: false,
@@ -16,47 +16,33 @@ const pluginConfig = {
     isEnabled: true
 }
 
-const STYLES = ['photorealistic', 'digital-art', 'impressionist', 'anime', 'fantasy', 'sci-fi', 'vintage']
-
 async function handler(m, { sock }) {
-    const input = m.args.join(' ')
-    if (!input) {
-        return m.reply(
-            `🎨 *ᴛᴇxᴛ ᴛᴏ ɪᴍᴀɢᴇ*\n\n` +
-            `> Generate gambar dari teks dengan AI\n\n` +
-            `\`Contoh: ${m.prefix}txt2img beautiful sunset | anime\`\n\n` +
-            `🎭 *sᴛʏʟᴇs*\n` +
-            `> \`${STYLES.join(', ')}\``
-        )
+    const prompt = m.args.join(' ')
+    if (!prompt) {
+        return m.reply(`🎨 *ᴛxᴛ2ɪᴍɢ*\n\n> Generate gambar dari teks\n\n\`Contoh: ${m.prefix}txt2img beautiful anime girl with blue hair\``)
     }
     
-    const [prompt, styleInput] = input.split('|').map(s => s.trim())
-    const style = STYLES.includes(styleInput) ? styleInput : 'anime'
-    
-    m.react('🎨')
+    await m.react('🎨')
+    await m.reply(`⏳ *ɢᴇɴᴇʀᴀᴛɪɴɢ...*\n\n> Prompt: ${prompt.substring(0, 50)}...`)
     
     try {
-        const imageUrl = await txt2img(prompt, style)
+        const result = await nanobanana.generateImage(prompt)
         
-        if (!imageUrl) {
-            m.react('❌')
-            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Tidak dapat generate gambar`)
+        if (!result.success || !result.buffer) {
+            await m.react('❌')
+            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> ${result.error || 'Tidak dapat generate gambar'}`)
         }
         
-        m.react('✨')
+        await m.react('✅')
         
         await sock.sendMessage(m.chat, {
-            image: { url: imageUrl },
-            caption: `🎨 *ᴛᴇxᴛ ᴛᴏ ɪᴍᴀɢᴇ*\n\n` +
-                `╭┈┈⬡「 📋 *ᴅᴇᴛᴀɪʟ* 」\n` +
-                `┃ 📝 ᴘʀᴏᴍᴘᴛ: \`${prompt}\`\n` +
-                `┃ 🎭 sᴛʏʟᴇ: \`${style}\`\n` +
-                `┃ 🤖 ᴍᴏᴅᴇʟ: \`UnrestrictedAI\`\n` +
-                `╰┈┈⬡`
+            image: result.buffer,
+            caption: `🎨 *ᴛxᴛ2ɪᴍɢ*\n\n> _Model: ${result.model}_\n> _Prompt: ${prompt.substring(0, 100)}_`
         }, { quoted: m })
         
     } catch (error) {
-        m.react('❌')
+        console.error('[txt2img] Error:', error)
+        await m.react('❌')
         m.reply(`❌ *ᴇʀʀᴏʀ*\n\n> ${error.message}`)
     }
 }

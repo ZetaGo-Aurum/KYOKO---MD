@@ -1,74 +1,135 @@
-const axios = require('axios');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+require('dotenv').config();
 
+/**
+ * Gemini AI Chat - Using Official Google AI SDK
+ * Supports text chat and conversation history
+ */
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+// Initialize Gemini
+let genAI = null;
+let model = null;
+
+function initGemini() {
+    if (!GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY tidak ditemukan di .env');
+    }
+    if (!genAI) {
+        genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    }
+    return model;
+}
+
+/**
+ * Simple text generation
+ */
 async function gemini({ message, instruction = '', sessionId = null }) {
     try {
         if (!message) throw new Error('Message is required.');
         
-        let resumeArray = null;
-        let cookie = null;
-        let savedInstruction = instruction;
+        const geminiModel = initGemini();
         
-        if (sessionId) {
-            try {
-                const sessionData = JSON.parse(Buffer.from(sessionId, 'base64').toString());
-                resumeArray = sessionData.resumeArray;
-                cookie = sessionData.cookie;
-                savedInstruction = instruction || sessionData.instruction || '';
-            } catch (e) {
-                console.error('Error parsing session:', e.message);
-            }
+        // Build prompt with instruction if provided
+        let fullPrompt = message;
+        if (instruction) {
+            fullPrompt = `${instruction}\n\nUser: ${message}`;
         }
         
-        if (!cookie) {
-            const { headers } = await axios.post('https://gemini.google.com/_/BardChatUi/data/batchexecute?rpcids=maGuAc&source-path=%2F&bl=boq_assistant-bard-web-server_20250814.06_p1&f.sid=-7816331052118000090&hl=en-US&_reqid=173780&rt=c', 'f.req=%5B%5B%5B%22maGuAc%22%2C%22%5B0%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&', {
-                headers: {
-                    'content-type': 'application/x-www-form-urlencoded;charset=UTF-8'
-                }
-            });
-            
-            cookie = headers['set-cookie']?.[0]?.split('; ')[0] || '';
-        }
-        
-        const requestBody = [
-            [message, 0, null, null, null, null, 0], ["en-US"], resumeArray || ["", "", "", null, null, null, null, null, null, ""],
-            null, null, null, [1], 1, null, null, 1, 0, null, null, null, null, null, [[0]], 1, null, null, null, null, null,
-            ["", "", savedInstruction, null, null, null, null, null, 0, null, 1, null, null, null, []],
-            null, null, 1, null, null, null, null, null, null, null, 
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], 1, null, null, null, null, [1]
-        ];
-        
-        const payload = [null, JSON.stringify(requestBody)];
-        
-        const { data } = await axios.post('https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate?bl=boq_assistant-bard-web-server_20250729.06_p0&f.sid=4206607810970164620&hl=en-US&_reqid=2813378&rt=c', new URLSearchParams({ 'f.req': JSON.stringify(payload) }).toString(), {
-            headers: {
-                'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
-                'x-goog-ext-525001261-jspb': '[1,null,null,null,"9ec249fc9ad08861",null,null,null,[4]]',
-                'cookie': cookie
-            }
-        });
-        
-        const match = Array.from(data.matchAll(/^\d+\n(.+?)\n/gm));
-        const array = match.reverse();
-        const selectedArray = array[3][1];
-        const realArray = JSON.parse(selectedArray);
-        const parse1 = JSON.parse(realArray[0][2]);
-        
-        const newResumeArray = [...parse1[1], parse1[4][0][0]];
-        const text = parse1[4][0][1][0].replace(/\*\*(.+?)\*\*/g, '*$1*');
-        
-        const newSessionId = Buffer.from(JSON.stringify({
-            resumeArray: newResumeArray,
-            cookie: cookie,
-            instruction: savedInstruction
-        })).toString('base64');
+        // Generate response
+        const result = await geminiModel.generateContent(fullPrompt);
+        const response = await result.response;
+        const text = response.text();
         
         return {
             text: text,
-            sessionId: newSessionId
+            sessionId: null // Simplified - no session management for now
         };
+        
     } catch (error) {
-        throw new Error(error.message);
+        throw new Error(`Gemini Error: ${error.message}`);
     }
 }
 
-module.exports = gemini
+/**
+ * Chat with history (for conversation continuity)
+ */
+async function geminiChat(messages, instruction = '') {
+    try {
+        const geminiModel = initGemini();
+        
+        // Convert messages to Gemini format
+        const history = messages.slice(0, -1).map(msg => ({
+            role: msg.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: msg.content }]
+        }));
+        
+        const chat = geminiModel.startChat({
+            history: history,
+            generationConfig: {
+                maxOutputTokens: 2048,
+            },
+        });
+        
+        // Get last message
+        const lastMessage = messages[messages.length - 1];
+        let prompt = lastMessage.content;
+        if (instruction) {
+            prompt = `${instruction}\n\n${prompt}`;
+        }
+        
+        const result = await chat.sendMessage(prompt);
+        const response = await result.response;
+        
+        return {
+            text: response.text(),
+            role: 'assistant'
+        };
+        
+    } catch (error) {
+        throw new Error(`Gemini Chat Error: ${error.message}`);
+    }
+}
+
+/**
+ * Vision - Analyze image
+ */
+async function geminiVision(imageBuffer, prompt = 'Describe this image in detail') {
+    try {
+        if (!GEMINI_API_KEY) {
+            throw new Error('GEMINI_API_KEY tidak ditemukan di .env');
+        }
+        
+        const genAIVision = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const visionModel = genAIVision.getGenerativeModel({ model: 'gemini-2.0-flash' });
+        
+        // Convert buffer to base64
+        const base64Image = imageBuffer.toString('base64');
+        
+        const result = await visionModel.generateContent([
+            prompt,
+            {
+                inlineData: {
+                    mimeType: 'image/jpeg',
+                    data: base64Image
+                }
+            }
+        ]);
+        
+        const response = await result.response;
+        return {
+            text: response.text(),
+            success: true
+        };
+        
+    } catch (error) {
+        throw new Error(`Gemini Vision Error: ${error.message}`);
+    }
+}
+
+module.exports = gemini;
+module.exports.gemini = gemini;
+module.exports.geminiChat = geminiChat;
+module.exports.geminiVision = geminiVision;
