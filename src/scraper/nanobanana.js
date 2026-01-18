@@ -1,100 +1,102 @@
-const axios = require('axios');
+const fs = require('fs');
+
+// Attempt to load Puter.js
+let puter;
+try {
+    // Try standard require first
+    // Note: The user mentioned '@heyputer/puter.js/src/init.cjs' but standard import should be preferred if main is set
+    // We'll try standard first, then fallback to deep import if needed
+    try {
+        const puterLib = require('@heyputer/puter.js');
+        // Check if init exists on default export or named export
+        if (puterLib.init) {
+            puter = puterLib.init(process.env.PUTER_TOKEN);
+        } else {
+            // Might be a default export class/function
+            puter = new puterLib(process.env.PUTER_TOKEN); 
+        }
+    } catch (e1) {
+        // Fallback to specific path as user suggested
+        // Using dynamic require to avoid errors if path is wrong during static analysis
+        const { init } = require('@heyputer/puter.js/src/init.cjs');
+        puter = init(process.env.PUTER_TOKEN);
+    }
+} catch (error) {
+    console.error('[Puter] Library load failed:', error.message);
+}
 
 /**
- * Puter AI Wrapper
- * Reverse-engineered from https://js.puter.com/v2/
+ * Use Puter AI for Image-to-Image transformation
+ * Uses the installed @heyputer/puter.js library
  */
 async function puterImg2Img(imageBuffer, prompt) {
+    if (!puter) {
+        return { success: false, error: 'Library @heyputer/puter.js gagal dimuat' };
+    }
+
+    if (!process.env.PUTER_TOKEN) {
+        console.warn('[Puter] Warning: PUTER_TOKEN is missing in .env');
+        // We continue, hoping for free tier or detailed error
+    }
+
     try {
-        // 1. Convert Buffer to Base64
+        console.log('[Puter] Processing Img2Img with Gemini 2.5 Flash...');
+
+        // Convert Buffer to Base64
         const base64Image = imageBuffer.toString('base64');
-        const mimeType = 'image/jpeg'; // Assuming JPEG input for simplicity, or detect logic
+        const mimeType = 'image/jpeg'; 
 
-        // 2. Prepare Payload
-        // Based on puter.js: puter.ai.txt2img maps to driver call with "input_image"
-        const payload = {
-            "interface": "puter-ai-2",
-            "method": "txt2img",
-            "args": {
-                "prompt": prompt,
-                "input_image": base64Image,
-                "input_image_mime_type": mimeType,
-                "model": "gemini-2.5-flash-latest" // As requested: 2.5 flash
-            }
-        };
-
-        // 3. Get Anonymous Token (if needed) or Try Direct Call
-        // Puter API often works with a simple guest logic or specific headers.
-        // We act as the JS client.
-        
-        // Note: Direct API URL for drivers
-        const apiUrl = 'https://api.puter.com/drivers/call';
-        
-        console.log('[Puter] Sending request to:', apiUrl);
-
-        const response = await axios.post(apiUrl, payload, {
-            headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Origin': 'https://puter.com',
-                'Referer': 'https://puter.com/'
-            },
-            timeout: 120000 // 2 mins timeout
+        // Call Puter AI
+        // Using prompt + image options
+        // According to docs/usage, we use txt2img with input_image for img2img tasks
+        const imageElement = await puter.ai.txt2img(prompt, {
+            input_image: base64Image,
+            input_image_mime_type: mimeType,
+            model: 'gemini-2.5-flash-latest' // As requested
         });
 
-        // 4. Handle Response
-        // Puter returns an object, usually with a standard result structure
-        // The image might be a URL or Base64 in the response
+        // The result 'imageElement' is typically an HTML Image Element in browser,
+        // but in Node.js it returns an object with src (URL or Base64)
         
-        if (response.data && response.data.result) {
-            const resultData = response.data.result;
-            
-            // Result is commonly a base64 data URI or a URL
-            if (typeof resultData === 'string') {
-                if (resultData.startsWith('data:image')) {
-                     // Check base64 format
-                     return {
-                        success: true,
-                        buffer: Buffer.from(resultData.split(',')[1], 'base64')
-                     };
-                } else if (resultData.startsWith('http')) {
-                    // It's a URL
-                    const imgRes = await axios.get(resultData, { responseType: 'arraybuffer' });
-                    return {
-                        success: true,
-                        buffer: Buffer.from(imgRes.data)
-                    };
-                } else {
-                    // Raw base64?
-                    try {
-                        return {
-                             success: true,
-                             buffer: Buffer.from(resultData, 'base64')
-                        };
-                    } catch (e) {
-                         // ignore
-                    }
-                }
-            } else if (resultData.url) {
-                 const imgRes = await axios.get(resultData.url, { responseType: 'arraybuffer' });
-                 return { success: true, buffer: Buffer.from(imgRes.data) };
-            }
-        }
+        // Log the keys to debug structure if needed
+        // console.log('[Puter] Result Keys:', Object.keys(imageElement));
+
+        let src = imageElement.src || imageElement.url;
         
-        // Try to handle specific "image_element" or similar return if object
-        console.log('[Puter] Response:', JSON.stringify(response.data).substring(0, 200));
-        
-        if (response.data?.success === false) {
-             throw new Error(response.data?.error?.message || 'API request failed');
+        if (!src && typeof imageElement === 'string') {
+            src = imageElement;
         }
 
-        throw new Error('Invalid response format from Puter AI');
+        if (!src) {
+             // Sometimes it returns the element itself with a 'src' property
+             throw new Error('No image source returned from Puter AI');
+        }
+
+        // Process output
+        if (src.startsWith('data:image')) {
+            const base64Data = src.split(',')[1];
+            return {
+                success: true,
+                buffer: Buffer.from(base64Data, 'base64')
+            };
+        } else if (src.startsWith('http')) {
+            const axios = require('axios');
+            const imgRes = await axios.get(src, { responseType: 'arraybuffer' });
+            return {
+                success: true,
+                buffer: Buffer.from(imgRes.data)
+            };
+        } else {
+            throw new Error('Unknown output format: ' + src.substring(0, 50));
+        }
 
     } catch (error) {
         console.error('[Puter] Error:', error.message);
-        if (error.response) {
-             console.error('[Puter] Status:', error.response.status);
-             console.error('[Puter] Data:', error.response.data);
+        if (error.message.includes('401') || error.message.includes('token')) {
+            return { 
+                success: false, 
+                error: 'Token Puter.js Invalid/Missing. Harap set PUTER_TOKEN di .env' 
+            };
         }
         return { success: false, error: error.message };
     }

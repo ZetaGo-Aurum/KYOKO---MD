@@ -1,4 +1,4 @@
 @echo off
 git add -A
-git commit -m "feat toblack - use Puter AI (Gemini 2.5 Flash) for img2img"
+git commit -m "feat toblack - migrate to @heyputer/puter.js library"
 git push origin main
