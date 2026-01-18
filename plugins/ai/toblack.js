@@ -1,95 +1,48 @@
-const axios = require('axios')
-const FormData = require('form-data')
+const Jimp = require('jimp')
 
 const pluginConfig = {
     name: 'toblack',
     alias: ['black', 'hitam'],
     category: 'ai',
-    description: 'Transform foto dengan skin tone lebih gelap',
-    usage: '.toblack',
-    example: '.toblack',
+    description: 'Transform foto dengan tone lebih gelap',
+    usage: '.hitam',
+    example: '.hitam',
     isOwner: false,
     isPremium: false,
     isGroup: false,
     isPrivate: false,
-    cooldown: 30,
+    cooldown: 10,
     limit: 1,
     isEnabled: true
 }
 
 /**
- * Image Editor API - transforms image based on prompt
+ * Apply dark/melanin filter to image using Jimp
+ * This works 100% offline without any external API
  */
-async function generateImage(imageBuffer, prompt) {
+async function applyDarkFilter(imageBuffer) {
     try {
-        // Method 1: imgeditor.co API
-        const infoRes = await axios.post('https://imgeditor.co/api/get-upload-url', {
-            fileName: 'image.jpg',
-            contentType: 'image/jpeg',
-            fileSize: imageBuffer.length
-        }, {
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 30000
-        })
+        const image = await Jimp.read(imageBuffer)
         
-        const info = infoRes.data
-        if (!info?.uploadUrl || !info?.publicUrl) {
-            throw new Error('Upload URL not available')
-        }
+        // Darken the image
+        image.brightness(-0.15)  // Slightly darker
         
-        // Upload image
-        await axios.put(info.uploadUrl, imageBuffer, {
-            headers: { 'Content-Type': 'image/jpeg' },
-            timeout: 60000
-        })
+        // Adjust contrast for richer tones
+        image.contrast(0.1)
         
-        // Generate
-        const genRes = await axios.post('https://imgeditor.co/api/generate-image', {
-            prompt,
-            styleId: 'realistic',
-            mode: 'image',
-            imageUrl: info.publicUrl,
-            imageUrls: [info.publicUrl],
-            numImages: 1,
-            outputFormat: 'png',
-            model: 'nano-banana'
-        }, {
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 60000
-        })
+        // Apply warm/brown tint for natural skin tone look
+        image.color([
+            { apply: 'saturate', params: [15] },      // More saturated
+            { apply: 'hue', params: [-5] },           // Slight warm shift
+            { apply: 'mix', params: [{ r: 139, g: 90, b: 43 }, 15] }  // Brown tint
+        ])
         
-        const gen = genRes.data
-        if (!gen?.taskId) {
-            throw new Error('Task ID not received')
-        }
-        
-        // Poll for result
-        let status
-        let attempts = 0
-        const maxAttempts = 30
-        
-        while (attempts < maxAttempts) {
-            await new Promise(r => setTimeout(r, 3000))
-            attempts++
-            
-            const statusRes = await axios.get(
-                `https://imgeditor.co/api/generate-image/status?taskId=${gen.taskId}`,
-                { timeout: 15000 }
-            )
-            status = statusRes.data
-            
-            if (status?.status === 'completed' && status?.imageUrl) {
-                return { success: true, imageUrl: status.imageUrl }
-            }
-            if (status?.status === 'failed') {
-                throw new Error('Generation failed')
-            }
-        }
-        
-        throw new Error('Timeout waiting for result')
+        // Get buffer
+        const outputBuffer = await image.getBufferAsync(Jimp.MIME_JPEG)
+        return { success: true, buffer: outputBuffer }
         
     } catch (error) {
-        console.error('[toblack] API Error:', error.message)
+        console.error('[toblack] Jimp Error:', error.message)
         return { success: false, error: error.message }
     }
 }
@@ -107,7 +60,6 @@ async function handler(m, { sock }) {
     }
     
     await m.react('🖤')
-    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Sedang memproses gambar...`)
     
     try {
         // Download image - handle both direct and quoted
@@ -124,17 +76,15 @@ async function handler(m, { sock }) {
             return m.reply(`❌ *ᴇʀʀᴏʀ*\n\n> Gagal mengunduh gambar`)
         }
         
-        // Transform prompt
-        const prompt = `natural darker skin tone, same identity, realistic face, rich skin texture, soft lighting, photorealistic, balanced exposure`
+        // Apply dark filter
+        const result = await applyDarkFilter(mediaBuffer)
         
-        const result = await generateImage(mediaBuffer, prompt)
-        
-        if (!result.success || !result.imageUrl) {
+        if (!result.success || !result.buffer) {
             await m.react('❌')
             return m.reply(
                 `❌ *ᴇʀʀᴏʀ*\n\n` +
-                `> API sedang tidak tersedia\n` +
-                `> Coba lagi nanti`
+                `> Gagal memproses gambar\n` +
+                `> ${result.error || 'Unknown error'}`
             )
         }
         
@@ -142,8 +92,8 @@ async function handler(m, { sock }) {
         
         // Send result
         await sock.sendMessage(m.chat, {
-            image: { url: result.imageUrl },
-            caption: `🖤 *ᴛᴏ ʙʟᴀᴄᴋ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ`
+            image: result.buffer,
+            caption: `🖤 *ᴛᴏ ʙʟᴀᴄᴋ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Powered by KYOKO MD_`
         }, { quoted: m })
         
     } catch (error) {
