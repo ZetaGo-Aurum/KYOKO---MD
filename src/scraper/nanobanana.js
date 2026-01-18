@@ -2,29 +2,13 @@ const axios = require('axios');
 require('dotenv').config();
 
 /**
- * TRUE IMAGE-TO-IMAGE Transformation using Prodia API
- * - Uses reference image as init_image
- * - Low denoising_strength (0.25-0.35) to preserve original image
- * - Prompt only modifies specific aspects
- * 
- * This ensures the output looks like the INPUT image with modifications,
- * NOT a completely new generated image.
+ * TRUE IMAGE-TO-IMAGE Transformation using Pollinations.ai KONTEXT Model
+ * - Uses reference image as init_image via URL parameter
+ * - NO API KEY required - completely FREE
+ * - KONTEXT model is specifically designed for img2img transformations
  */
 
 const HF_TOKEN = process.env.HF_TOKEN;
-const PRODIA_API_KEY = process.env.PRODIA_API_KEY; // Optional, for higher limits
-
-// Prodia API endpoints
-const PRODIA_BASE = 'https://api.prodia.com/v1';
-
-// Models available for img2img
-const MODELS = {
-    'sdxl': 'sdxl',
-    'sd15': 'deliberate_v3.safetensors [afd9d2d364]',
-    'realistic': 'realisticVisionV51_v51VAE.safetensors [15012c538f]',
-    'anime': 'anythingV5_PrtRE.safetensors [893e49b9a9]',
-    'dreamshaper': 'dreamshaper_8.safetensors [9d40847d09]'
-};
 
 /**
  * Upload image to temporary host for URL access
@@ -49,160 +33,59 @@ async function uploadToTempHost(imageBuffer) {
 }
 
 /**
- * TRUE Img2Img using Prodia API
+ * TRUE Img2Img using Pollinations.ai KONTEXT model
  * @param {Buffer} imageBuffer - Reference image that MUST be preserved
  * @param {string} prompt - Modification prompt (skin color, style, etc)
  * @param {Object} options - Additional options
- * @param {string} options.model - Model to use (default: 'realistic')
- * @param {number} options.strength - Denoising strength 0-1 (lower = more faithful to original, default: 0.3)
- * @param {string} options.negativePrompt - What to avoid
  */
 async function img2img(imageBuffer, prompt, options = {}) {
     const {
-        model = 'realistic',
-        strength = 0.3, // LOW strength = HIGH fidelity to original
-        negativePrompt = 'blurry, bad quality, distorted, deformed, ugly'
+        model = 'kontext', // KONTEXT is designed for img2img
+        seed = Math.floor(Math.random() * 1000000)
     } = options;
 
-    console.log(`[Prodia] Starting TRUE img2img transformation...`);
-    console.log(`[Prodia] Strength: ${strength} (lower = more faithful to original)`);
-    console.log(`[Prodia] Prompt: ${prompt.substring(0, 50)}...`);
+    console.log(`[Pollinations] Starting TRUE img2img transformation...`);
+    console.log(`[Pollinations] Model: ${model} (designed for image editing)`);
+    console.log(`[Pollinations] Prompt: ${prompt.substring(0, 50)}...`);
 
     try {
         // 1. Upload reference image to get URL
-        console.log('[Prodia] Uploading reference image...');
+        console.log('[Pollinations] Uploading reference image...');
         const imageUrl = await uploadToTempHost(imageBuffer);
-        console.log('[Prodia] Image URL:', imageUrl.substring(0, 50) + '...');
+        console.log('[Pollinations] Image URL:', imageUrl.substring(0, 50) + '...');
 
-        // 2. Call Prodia img2img API
-        const selectedModel = MODELS[model] || MODELS['realistic'];
+        // 2. Construct Pollinations URL with KONTEXT model
+        // KONTEXT model uses the image URL in the prompt or as parameter
+        const encodedPrompt = encodeURIComponent(prompt);
+        const encodedImageUrl = encodeURIComponent(imageUrl);
         
-        const jobResponse = await axios.post(`${PRODIA_BASE}/sd/transform`, {
-            imageUrl: imageUrl,
-            prompt: prompt,
-            negative_prompt: negativePrompt,
-            model: selectedModel,
-            denoising_strength: strength,
-            steps: 25,
-            cfg_scale: 7,
-            sampler: 'DPM++ 2M Karras',
-            width: 512,
-            height: 512
-        }, {
-            headers: {
-                'X-Prodia-Key': PRODIA_API_KEY || 'guest',
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            timeout: 30000
-        });
+        // Pollinations img2img format with kontext model
+        const pollUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?image=${encodedImageUrl}&model=${model}&seed=${seed}&width=1024&height=1024&nologo=true`;
 
-        const jobId = jobResponse.data.job;
-        console.log(`[Prodia] Job created: ${jobId}`);
-
-        // 3. Poll for completion
-        let result = null;
-        let attempts = 0;
-        const maxAttempts = 60; // Max 2 minutes
-
-        while (attempts < maxAttempts) {
-            await new Promise(r => setTimeout(r, 2000)); // Wait 2 seconds
-            
-            const statusResponse = await axios.get(`${PRODIA_BASE}/job/${jobId}`, {
-                headers: {
-                    'X-Prodia-Key': PRODIA_API_KEY || 'guest',
-                    'Accept': 'application/json'
-                }
-            });
-
-            const status = statusResponse.data.status;
-            
-            if (status === 'succeeded') {
-                result = statusResponse.data;
-                break;
-            } else if (status === 'failed') {
-                throw new Error('Prodia job failed: ' + (statusResponse.data.error || 'Unknown error'));
-            }
-            
-            attempts++;
-            console.log(`[Prodia] Status: ${status} (attempt ${attempts}/${maxAttempts})`);
-        }
-
-        if (!result) {
-            throw new Error('Prodia job timed out');
-        }
-
-        // 4. Download result image
-        const imageResponse = await axios.get(result.imageUrl, {
-            responseType: 'arraybuffer',
-            timeout: 30000
-        });
-
-        console.log('[Prodia] ✓ Transformation complete!');
-
-        return {
-            success: true,
-            buffer: Buffer.from(imageResponse.data),
-            model: model,
-            strength: strength
-        };
-
-    } catch (error) {
-        console.error('[Prodia] Error:', error.message);
+        console.log('[Pollinations] Requesting transformation...');
         
-        // Fallback to HuggingFace text2img if Prodia fails
-        if (HF_TOKEN) {
-            console.log('[Prodia] Falling back to HuggingFace...');
-            return await fallbackToHF(prompt, model);
-        }
-
-        return {
-            success: false,
-            error: `Gagal transformasi: ${error.message}`
-        };
-    }
-}
-
-/**
- * Fallback to HuggingFace text2img (NOT recommended for img2img)
- */
-async function fallbackToHF(prompt, model) {
-    const HF_MODELS = {
-        'sdxl': 'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0',
-        'anime': 'https://router.huggingface.co/hf-inference/models/stablediffusionapi/anything-v5',
-        'realistic': 'https://router.huggingface.co/hf-inference/models/Lykon/dreamshaper-8'
-    };
-
-    const modelUrl = HF_MODELS[model] || HF_MODELS['sdxl'];
-
-    try {
-        const response = await axios.post(modelUrl, {
-            inputs: prompt,
-            parameters: {
-                negative_prompt: 'blurry, bad quality',
-                num_inference_steps: 30,
-                guidance_scale: 7.5
-            }
-        }, {
-            headers: {
-                'Authorization': `Bearer ${HF_TOKEN}`,
-                'Content-Type': 'application/json',
-                'Accept': 'image/png'
-            },
+        const response = await axios.get(pollUrl, {
             responseType: 'arraybuffer',
-            timeout: 120000
+            timeout: 120000, // 2 minutes for generation
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
         });
+
+        console.log('[Pollinations] ✓ Transformation complete!');
 
         return {
             success: true,
             buffer: Buffer.from(response.data),
-            model: model,
-            note: 'Generated via HuggingFace (fallback - not true img2img)'
+            model: model
         };
+
     } catch (error) {
+        console.error('[Pollinations] Error:', error.message);
+        
         return {
             success: false,
-            error: `Fallback juga gagal: ${error.message}`
+            error: `Gagal transformasi: ${error.message}`
         };
     }
 }
@@ -214,8 +97,8 @@ async function fallbackToHF(prompt, model) {
  */
 async function toBlack(imageBuffer) {
     return img2img(imageBuffer, 
-        'same person with very dark black ebony African skin tone, same pose, same clothes, same background, photorealistic',
-        { model: 'realistic', strength: 0.35 }
+        'Transform this person to have very dark black ebony African skin tone. Keep exact same facial features, same pose, same clothes, same background. Only change skin color to dark black.',
+        { model: 'kontext' }
     );
 }
 
@@ -224,8 +107,8 @@ async function toBlack(imageBuffer) {
  */
 async function toWhite(imageBuffer) {
     return img2img(imageBuffer,
-        'same person with fair white caucasian skin tone, same pose, same clothes, same background, photorealistic',
-        { model: 'realistic', strength: 0.35 }
+        'Transform this person to have fair white caucasian skin tone. Keep exact same facial features, same pose, same clothes, same background. Only change skin color to fair white.',
+        { model: 'kontext' }
     );
 }
 
@@ -234,8 +117,8 @@ async function toWhite(imageBuffer) {
  */
 async function toAnime(imageBuffer) {
     return img2img(imageBuffer,
-        'anime style illustration, same pose, same composition, clean lineart, high quality anime',
-        { model: 'anime', strength: 0.45 }
+        'Transform this image into anime style illustration. Keep same pose, same composition. Clean anime lineart, big expressive eyes, smooth shading, high quality anime art style.',
+        { model: 'kontext' }
     );
 }
 
@@ -244,8 +127,8 @@ async function toAnime(imageBuffer) {
  */
 async function toCartoon(imageBuffer) {
     return img2img(imageBuffer,
-        'cartoon illustration, disney pixar style, same pose, same composition, bright colors',
-        { model: 'dreamshaper', strength: 0.45 }
+        'Transform this image into cartoon illustration style like Disney Pixar. Keep same pose, same composition. Bright colors, smooth shading, clean cartoon render.',
+        { model: 'kontext' }
     );
 }
 
@@ -254,8 +137,8 @@ async function toCartoon(imageBuffer) {
  */
 async function toManga(imageBuffer) {
     return img2img(imageBuffer,
-        'black and white manga style, clean ink lineart, screentone shading, same pose',
-        { model: 'anime', strength: 0.5 }
+        'Transform this image into black and white manga style. Keep same pose. Clean ink lineart, screentone shading, high contrast, japanese manga panel aesthetic.',
+        { model: 'kontext' }
     );
 }
 
@@ -264,8 +147,8 @@ async function toManga(imageBuffer) {
  */
 async function toChinese(imageBuffer) {
     return img2img(imageBuffer,
-        'chinese art style, soft elegant features, porcelain skin, asian beauty, same pose',
-        { model: 'realistic', strength: 0.4 }
+        'Transform this image into chinese art style portrait. Soft elegant features, porcelain-like skin. Keep same pose. Asian art style, beautiful lighting.',
+        { model: 'kontext' }
     );
 }
 
@@ -274,8 +157,8 @@ async function toChinese(imageBuffer) {
  */
 async function toComic(imageBuffer) {
     return img2img(imageBuffer,
-        'western comic book style, bold outlines, vibrant colors, dynamic lighting, same pose',
-        { model: 'dreamshaper', strength: 0.45 }
+        'Transform this image into western comic book style like Marvel DC. Bold outlines, vibrant colors, dynamic lighting. Keep same pose and composition.',
+        { model: 'kontext' }
     );
 }
 
@@ -284,8 +167,8 @@ async function toComic(imageBuffer) {
  */
 async function toHijab(imageBuffer) {
     return img2img(imageBuffer,
-        'wearing elegant modest hijab covering hair, same face, same pose, photorealistic',
-        { model: 'realistic', strength: 0.4 }
+        'Add an elegant modest hijab covering hair and neck to this person. Keep exact same face, same pose, same expression. Photorealistic hijab.',
+        { model: 'kontext' }
     );
 }
 
@@ -294,39 +177,24 @@ async function toHijab(imageBuffer) {
  */
 async function toPresident(imageBuffer) {
     return img2img(imageBuffer,
-        'formal presidential portrait, black suit red tie, dignified expression, studio lighting, same face',
-        { model: 'realistic', strength: 0.4 }
+        'Transform this person into a formal presidential portrait. Add black suit with red tie. Keep exact same face. Studio lighting, dignified pose.',
+        { model: 'kontext' }
     );
 }
 
 // Legacy compatibility
 async function puterImg2Img(imageBuffer, prompt) {
-    return img2img(imageBuffer, prompt, { model: 'realistic', strength: 0.35 });
+    return img2img(imageBuffer, prompt, { model: 'kontext' });
 }
 
 // Text-to-image (for txt2img.js plugin)
-async function generateImage(prompt, model = 'sdxl') {
-    if (!HF_TOKEN) {
-        return { success: false, error: 'HF_TOKEN tidak ditemukan di .env' };
-    }
-
-    const HF_MODELS = {
-        'sdxl': 'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0',
-        'anime': 'https://router.huggingface.co/hf-inference/models/stablediffusionapi/anything-v5',
-        'dreamshaper': 'https://router.huggingface.co/hf-inference/models/Lykon/dreamshaper-8'
-    };
-
-    const modelUrl = HF_MODELS[model] || HF_MODELS['sdxl'];
-
+async function generateImage(prompt, model = 'flux') {
     try {
-        const response = await axios.post(modelUrl, {
-            inputs: prompt
-        }, {
-            headers: {
-                'Authorization': `Bearer ${HF_TOKEN}`,
-                'Content-Type': 'application/json',
-                'Accept': 'image/png'
-            },
+        const seed = Math.floor(Math.random() * 1000000);
+        const encodedPrompt = encodeURIComponent(prompt);
+        const pollUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?model=${model}&seed=${seed}&width=1024&height=1024&nologo=true`;
+
+        const response = await axios.get(pollUrl, {
             responseType: 'arraybuffer',
             timeout: 120000
         });
