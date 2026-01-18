@@ -337,7 +337,7 @@ async function handler(m, { sock, config: botConfig, db, uptime }) {
                 break;
                 
             case 2:
-                // Menu V2: Standard with Image + Caption + Thumbnail (Works on ALL platforms)
+                // Menu V2: Standard - Image + Caption + Thumbnail (works on all devices)
                 const saluranIdV2 = botConfig.saluran?.id || '120363208449943317@newsletter';
                 const saluranNameV2 = botConfig.saluran?.name || botConfig.bot?.name || 'KYOKO MD';
                 
@@ -345,7 +345,7 @@ async function handler(m, { sock, config: botConfig, db, uptime }) {
                 const ourinPath = path.join(process.cwd(), 'assets', 'images', 'ourin.jpg');
                 const ourinThumb = fs.existsSync(ourinPath) ? fs.readFileSync(ourinPath) : thumbBuffer;
                 
-                // Context info with thumbnail that works on all platforms
+                // Context info with thumbnail
                 const contextInfoV2 = {
                     mentionedJid: [m.sender],
                     forwardingScore: 9999,
