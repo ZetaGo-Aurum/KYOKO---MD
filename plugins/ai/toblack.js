@@ -1,37 +1,70 @@
 const axios = require('axios')
+const FormData = require('form-data')
 
 const pluginConfig = {
     name: 'toblack',
     alias: ['black', 'hitam'],
     category: 'ai',
-    description: 'Generate ulang gambar dengan karakter berkulit hitam pekat menggunakan AI',
-    usage: '.hitam',
-    example: '.hitam',
+    description: 'Transform karakter menjadi berkulit hitam pekat (Img2Img)',
+    usage: '.toblack',
+    example: '.toblack',
     isOwner: false,
     isPremium: false,
     isGroup: false,
     isPrivate: false,
-    cooldown: 30,
+    cooldown: 20,
     limit: 1,
     isEnabled: true
 }
 
 /**
- * Pollinations.ai - Free AI Image Generation API
- * No auth required, unlimited generations
+ * Upload image to Catbox.moe
+ * More stable and faster than tmpfiles for API usage
  */
-async function generateBlackSkinImage(prompt) {
+async function uploadToCatbox(buffer) {
     try {
-        // Pollinations.ai text-to-image API
+        const form = new FormData()
+        form.append('reqtype', 'fileupload')
+        form.append('userhash', '')
+        form.append('fileToUpload', buffer, { filename: 'image.jpg', contentType: 'image/jpeg' })
+
+        const response = await axios.post('https://catbox.moe/user/api.php', form, {
+            headers: form.getHeaders(),
+            timeout: 60000 // 60s timeout for upload
+        })
+
+        if (response.data && response.data.startsWith('http')) {
+            return response.data.trim()
+        }
+        throw new Error('Upload failed')
+    } catch (error) {
+        console.error('[toblack] Catbox Upload Error:', error.message)
+        throw new Error('Gagal mengupload gambar ke server')
+    }
+}
+
+/**
+ * Pollinations.ai Img2Img Transformation
+ * Uses ?image=URL parameter to preserve original composition
+ */
+async function transformImg2Img(imageUrl, prompt) {
+    try {
         const encodedPrompt = encodeURIComponent(prompt)
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=512&height=512&nologo=true`
+        const encodedImage = encodeURIComponent(imageUrl)
         
-        // Fetch the image
-        const response = await axios.get(imageUrl, {
+        // Construct Img2Img URL
+        // model=flux is generally good for prompt adherence
+        // seed helps stability
+        const seed = Math.floor(Math.random() * 1000000)
+        const api = `https://image.pollinations.ai/prompt/${encodedPrompt}?image=${encodedImage}&width=1024&height=1024&model=flux&seed=${seed}&nologo=true`
+        
+        console.log('[toblack] Generatig: ', api)
+        
+        const response = await axios.get(api, {
             responseType: 'arraybuffer',
-            timeout: 60000,
+            timeout: 120000, // 2 minutes timeout for generation
             headers: {
-                'User-Agent': 'KYOKO-MD-Bot'
+                'User-Agent': 'KYOKO-MD-Bot/2.0'
             }
         })
         
@@ -40,73 +73,10 @@ async function generateBlackSkinImage(prompt) {
             buffer: Buffer.from(response.data)
         }
     } catch (error) {
-        console.error('[toblack] Pollinations Error:', error.message)
-        return { success: false, error: error.message }
-    }
-}
-
-/**
- * Alternative: Use img2img style transformation via prodia.com free API
- */
-async function transformImageWithAI(imageBuffer) {
-    try {
-        // Upload image to tmpfiles.org for URL access
-        const FormData = require('form-data')
-        const form = new FormData()
-        form.append('file', imageBuffer, { filename: 'image.jpg', contentType: 'image/jpeg' })
-        
-        const uploadRes = await axios.post('https://tmpfiles.org/api/v1/upload', form, {
-            headers: form.getHeaders(),
-            timeout: 30000
-        })
-        
-        if (!uploadRes.data?.data?.url) {
-            throw new Error('Failed to upload image')
-        }
-        
-        // Convert tmpfiles URL to direct URL
-        const tmpUrl = uploadRes.data.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/')
-        
-        // Use Prodia free img2img API
-        const prodiaRes = await axios.post('https://api.prodia.com/v1/sd/transform', {
-            imageUrl: tmpUrl,
-            prompt: 'african american person, very dark black skin, ebony skin tone, deep dark complexion, same pose, same clothing, same background, high quality, detailed',
-            negative_prompt: 'light skin, pale skin, white skin, asian skin, deformed, ugly, bad anatomy',
-            model: 'v1-5-pruned-emaonly.safetensors [d7049739]',
-            steps: 25,
-            cfg_scale: 7,
-            sampler: 'Euler a',
-            strength: 0.65
-        }, {
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Prodia-Key': 'free-tier'
-            },
-            timeout: 30000
-        })
-        
-        if (prodiaRes.data?.job) {
-            // Poll for result
-            let status
-            let attempts = 0
-            while (attempts < 30) {
-                await new Promise(r => setTimeout(r, 2000))
-                const statusRes = await axios.get(`https://api.prodia.com/v1/job/${prodiaRes.data.job}`, {
-                    timeout: 10000
-                })
-                status = statusRes.data
-                if (status.status === 'succeeded' && status.imageUrl) {
-                    const imgRes = await axios.get(status.imageUrl, { responseType: 'arraybuffer', timeout: 30000 })
-                    return { success: true, buffer: Buffer.from(imgRes.data) }
-                }
-                if (status.status === 'failed') break
-                attempts++
-            }
-        }
-        
-        throw new Error('Transform failed')
-    } catch (error) {
         console.error('[toblack] Transform Error:', error.message)
+        // Check for specific error types
+        if (error.code === 'ECONNABORTED') return { success: false, error: 'Waktu habis (timeout), server sibuk' }
+        if (error.response?.status === 429) return { success: false, error: 'Terlalu banyak request, coba lagi nanti' }
         return { success: false, error: error.message }
     }
 }
@@ -116,19 +86,17 @@ async function handler(m, { sock }) {
     
     if (!isImage) {
         return m.reply(
-            `🖤 *ᴛᴏ ʙʟᴀᴄᴋ*\n\n` +
-            `> Generate gambar dengan karakter berkulit hitam\n` +
-            `> Reply atau kirim gambar dengan caption\n` +
-            `> ${m.prefix}hitam\n\n` +
-            `> _Powered by AI Image Generation_`
+            `🖤 *ᴛᴏ ʙʟᴀᴄᴋ (ɪᴍɢ2ɪᴍɢ)*\n\n` +
+            `> Mengubah kulit karakter menjadi hitam pekat\n` +
+            `> Reply atau kirim gambar dengan: ${m.prefix}hitam`
         )
     }
     
     await m.react('🖤')
-    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Generating dengan AI...\n> Mohon tunggu 10-30 detik`)
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> 1. Uploading image...\n> 2. Transforming skin tone...\n> _Mohon bersabar, proses bisa memakan waktu 1 menit_`)
     
     try {
-        // Download the original image first
+        // 1. Download image
         let mediaBuffer = null
         if (m.isImage && typeof m.download === 'function') {
             mediaBuffer = await m.download()
@@ -141,22 +109,22 @@ async function handler(m, { sock }) {
             return m.reply(`❌ *ᴇʀʀᴏʀ*\n\n> Gagal mengunduh gambar`)
         }
         
-        // Try img2img transformation first
-        let result = await transformImageWithAI(mediaBuffer)
+        // 2. Upload to Catbox
+        const imageUrl = await uploadToCatbox(mediaBuffer)
+        console.log('[toblack] Uploaded to:', imageUrl)
         
-        // Fallback to text-to-image with dark skin prompt
-        if (!result.success) {
-            console.log('[toblack] Falling back to text2img generation')
-            const prompt = `beautiful african character, very dark black skin, deep ebony complexion, dark chocolate skin tone, anime style, high quality, detailed face, vibrant colors, professional artwork`
-            result = await generateBlackSkinImage(prompt)
-        }
+        // 3. Transform using Img2Img
+        // Strong prompt for dark skin black complexion
+        const prompt = "((very dark black skin)), ((ebony skin tone)), ((deep darkest complexion)), african descendant, same character, same pose, same clothing, same background, exact details, high quality, masterpiece, 8k resolution"
+        
+        const result = await transformImg2Img(imageUrl, prompt)
         
         if (!result.success || !result.buffer) {
             await m.react('❌')
             return m.reply(
                 `❌ *ᴇʀʀᴏʀ*\n\n` +
-                `> Gagal generate gambar\n` +
-                `> ${result.error || 'Coba lagi nanti'}`
+                `> Gagal transformasi gambar\n` +
+                `> _${result.error || 'Server sibuk'}_`
             )
         }
         
@@ -165,9 +133,9 @@ async function handler(m, { sock }) {
         await sock.sendMessage(m.chat, {
             image: result.buffer,
             caption: `🖤 *ᴛᴏ ʙʟᴀᴄᴋ*\n\n` +
-                `> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n` +
-                `> _AI Generated - Dark Skin_\n` +
-                `> _Powered by KYOKO MD_`
+                `> ᴛʀᴀɴsꜰᴏʀᴍ sᴜᴄᴄᴇss\n` +
+                `> _Img2Img Dark Skin v2_\n` +
+                `> _Powered by Pollinations.ai_`
         }, { quoted: m })
         
     } catch (error) {
@@ -175,7 +143,7 @@ async function handler(m, { sock }) {
         await m.react('❌')
         await m.reply(
             `❌ *ᴇʀʀᴏʀ*\n\n` +
-            `> ${error.message || 'Terjadi kesalahan'}`
+            `> ${error.message || 'Terjadi kesalahan sistem'}`
         )
     }
 }

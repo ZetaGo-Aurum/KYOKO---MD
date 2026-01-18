@@ -1,4 +1,4 @@
 @echo off
 git add -A
-git commit -m "feat toblack - use Pollinations and Prodia AI APIs for dark skin generation"
+git commit -m "fix toblack - use Pollinations Img2Img with Catbox upload"
 git push origin main
