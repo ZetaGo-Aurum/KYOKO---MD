@@ -14,8 +14,8 @@ async function puterImg2Img(imageBuffer, prompt) {
         // console.log('[Puter] Processing Img2Img with Gemini 2.5 Flash (Direct API)...'); // Reduced logging
 
         if (!process.env.PUTER_TOKEN) {
-            console.warn('[Puter] Warning: PUTER_TOKEN is missing in .env');
-            return { success: false, error: 'Token Puter.js Invalid/Missing. Harap set PUTER_TOKEN di .env' };
+            console.warn('[Puter] Warning: PUTER_TOKEN is missing. Using Pollinations AI Fallback.');
+            return await pollinationsImg2Img(imageBuffer, prompt);
         }
 
         const base64Image = imageBuffer.toString('base64');
@@ -92,6 +92,62 @@ async function puterImg2Img(imageBuffer, prompt) {
         return { 
             success: false, 
             error: `Gagal proses AI: ${error.message}` 
+        };
+    }
+}
+
+
+
+/**
+ * Fallback to Pollinations.ai (Free, No Token)
+ * Supports Img2Img via URL parameter
+ */
+async function pollinationsImg2Img(imageBuffer, prompt) {
+    try {
+        console.log('[Pollinations] Processing Img2Img (Fallback)...');
+        
+        // 1. Upload image to temporary host (catbox) because Pollinations needs URL
+        const FormData = require('form-data');
+        const form = new FormData();
+        form.append('reqtype', 'fileupload');
+        form.append('userhash', '');
+        form.append('fileToUpload', imageBuffer, { filename: 'image.jpg' });
+
+        const uploadRes = await axios.post('https://catbox.moe/user/api.php', form, {
+            headers: form.getHeaders(),
+            timeout: 30000
+        });
+
+        const imageUrl = uploadRes.data?.trim();
+        if (!imageUrl || !imageUrl.startsWith('http')) {
+            throw new Error('Gagal upload temporary image untuk Pollinations');
+        }
+
+        // 2. Call Pollinations
+        // Model: flux is good for realism
+        const safePrompt = encodeURIComponent(prompt + ", dark black skin, ebony, photorealistic, 8k");
+        const safeImage = encodeURIComponent(imageUrl);
+        
+        // Random seed to prevent caching
+        const seed = Math.floor(Math.random() * 1000000);
+        
+        const pollUrl = `https://image.pollinations.ai/prompt/${safePrompt}?image=${safeImage}&width=1024&height=1024&model=flux&seed=${seed}&nologo=true&enhance=false`;
+
+        const imgRes = await axios.get(pollUrl, {
+            responseType: 'arraybuffer',
+            timeout: 60000
+        });
+
+        return {
+            success: true,
+            buffer: Buffer.from(imgRes.data)
+        };
+
+    } catch (error) {
+        console.error('[Pollinations] Error:', error.message);
+        return {
+            success: false,
+            error: `Gagal (Pollinations): ${error.message}`
         };
     }
 }
