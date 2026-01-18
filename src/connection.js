@@ -158,8 +158,8 @@ async function startConnection(callbacks = {}) {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, baileysLogger)
         },
-        browser: Browsers.ubuntu('Chrome'),
-        generateHighQualityLinkPreview: true,
+        browser: ['Ubuntu', 'Chrome', '20.0.04'], // Hardcoded for stability
+        generateHighQualityLinkPreview: false, // Disabled to prevent crashes on low-spec servers
         syncFullHistory: false,
         markOnlineOnConnect: true
     });
