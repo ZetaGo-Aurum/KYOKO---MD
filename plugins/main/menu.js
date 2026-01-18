@@ -337,8 +337,7 @@ async function handler(m, { sock, config: botConfig, db, uptime }) {
                 break;
                 
             case 2:
-                // Menu V2: Standard with Interactive List Buttons
-                const prefixV2 = botConfig.command?.prefix || '.';
+                // Menu V2: Standard with Image + Caption + Thumbnail (Works on ALL platforms)
                 const saluranIdV2 = botConfig.saluran?.id || '120363208449943317@newsletter';
                 const saluranNameV2 = botConfig.saluran?.name || botConfig.bot?.name || 'KYOKO MD';
                 
@@ -346,130 +345,35 @@ async function handler(m, { sock, config: botConfig, db, uptime }) {
                 const ourinPath = path.join(process.cwd(), 'assets', 'images', 'ourin.jpg');
                 const ourinThumb = fs.existsSync(ourinPath) ? fs.readFileSync(ourinPath) : thumbBuffer;
                 
-                // Get categories for list buttons
-                const categoriesV2 = getCategories();
-                const commandsByCategoryV2 = getCommandsByCategory();
-                const categoryOrderV2 = ['main', 'ai', 'pentest', 'anime', 'download', 'search', 'tools', 'utility', 'fun', 'game', 'sticker', 'media', 'group', 'convert', 'cek', 'primbon', 'religi', 'info', 'owner'];
-                
-                const sortedCatsV2 = categoriesV2.sort((a, b) => {
-                    const indexA = categoryOrderV2.indexOf(a);
-                    const indexB = categoryOrderV2.indexOf(b);
-                    return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-                });
-                
-                // Build list sections for categories
-                const listSections = [];
-                const categorySection = {
-                    title: '📁 Pilih Kategori',
-                    rows: []
-                };
-                
-                for (const cat of sortedCatsV2) {
-                    if (cat === 'owner' && !m.isOwner) continue;
-                    if (cat === 'panel') continue;
-                    const cmds = commandsByCategoryV2[cat] || [];
-                    if (cmds.length === 0) continue;
-                    
-                    const emoji = CATEGORY_EMOJIS[cat] || '📋';
-                    categorySection.rows.push({
-                        title: `${emoji} ${cat.charAt(0).toUpperCase() + cat.slice(1)}`,
-                        description: `${cmds.length} commands tersedia`,
-                        id: `${prefixV2}menucat ${cat}`
-                    });
-                }
-                listSections.push(categorySection);
-                
-                // Quick actions section
-                const quickSection = {
-                    title: '⚡ Aksi Cepat',
-                    rows: [
-                        { title: '📊 Total Fitur', description: 'Lihat statistik fitur bot', id: `${prefixV2}totalfitur` },
-                        { title: '🎨 Ganti Tampilan', description: 'Ubah style menu', id: `${prefixV2}setmenu` },
-                        { title: '📋 Info Bot', description: 'Informasi lengkap bot', id: `${prefixV2}infobot` },
-                        { title: '👤 Info User', description: 'Informasi akun kamu', id: `${prefixV2}profile` }
-                    ]
-                };
-                listSections.push(quickSection);
-                
-                try {
-                    // Build interactive message with list
-                    const interactiveMsg = {
-                        header: {
-                            hasMediaAttachment: true,
-                            imageMessage: imageBuffer ? proto.Message.ImageMessage.fromObject({
-                                jpegThumbnail: ourinThumb
-                            }) : null
-                        },
-                        body: { text: text },
-                        footer: { text: `© ${botConfig.bot?.name || 'KYOKO MD'} v${botConfig.bot?.version || '2.0'}` },
-                        nativeFlowMessage: {
-                            buttons: [
-                                {
-                                    name: 'single_select',
-                                    buttonParamsJson: JSON.stringify({
-                                        title: '📋 Pilih Menu',
-                                        sections: listSections
-                                    })
-                                },
-                                {
-                                    name: 'cta_url',
-                                    buttonParamsJson: JSON.stringify({
-                                        display_text: '📢 Join Channel',
-                                        url: botConfig.saluran?.link || 'https://whatsapp.com/channel/0029VbB37bgBfxoAmAlsgE0t'
-                                    })
-                                }
-                            ],
-                            messageParamsJson: ''
-                        }
-                    };
-                    
-                    const msgV2Content = generateWAMessageFromContent(m.chat, {
-                        viewOnceMessage: {
-                            message: {
-                                interactiveMessage: interactiveMsg
-                            }
-                        }
-                    }, {
-                        quoted: getVerifiedQuoted(botConfig),
-                        userJid: sock.user.id
-                    });
-                    
-                    // Try to send interactive message
-                    await sock.relayMessage(m.chat, msgV2Content.message, { messageId: msgV2Content.key.id });
-                    
-                } catch (interactiveError) {
-                    console.error('[Menu V2] Interactive error, falling back:', interactiveError.message);
-                    
-                    // Fallback: Send as image with caption + contextInfo with thumbnail
-                    const contextInfoV2 = {
-                        mentionedJid: [m.sender],
-                        forwardingScore: 9999,
-                        isForwarded: true,
-                        forwardedNewsletterMessageInfo: {
-                            newsletterJid: saluranIdV2,
-                            newsletterName: saluranNameV2,
-                            serverMessageId: 127
-                        },
-                        externalAdReply: {
-                            title: botConfig.bot?.name || 'KYOKO MD',
-                            body: `v${botConfig.bot?.version || '2.0'} • Interactive Menu`,
-                            sourceUrl: botConfig.saluran?.link || '',
-                            mediaType: 1,
-                            showAdAttribution: false,
-                            renderLargerThumbnail: true,
-                            thumbnail: ourinThumb
-                        }
-                    };
-                    
-                    const msgV2Fallback = { contextInfo: contextInfoV2 };
-                    if (imageBuffer) {
-                        msgV2Fallback.image = imageBuffer;
-                        msgV2Fallback.caption = text;
-                    } else {
-                        msgV2Fallback.text = text;
+                // Context info with thumbnail that works on all platforms
+                const contextInfoV2 = {
+                    mentionedJid: [m.sender],
+                    forwardingScore: 9999,
+                    isForwarded: true,
+                    forwardedNewsletterMessageInfo: {
+                        newsletterJid: saluranIdV2,
+                        newsletterName: saluranNameV2,
+                        serverMessageId: 127
+                    },
+                    externalAdReply: {
+                        title: botConfig.bot?.name || 'KYOKO MD',
+                        body: `v${botConfig.bot?.version || '2.0'} • Fast Response Bot`,
+                        sourceUrl: botConfig.saluran?.link || '',
+                        mediaType: 1,
+                        showAdAttribution: false,
+                        renderLargerThumbnail: true,
+                        thumbnail: ourinThumb
                     }
-                    await sock.sendMessage(m.chat, msgV2Fallback, { quoted: getVerifiedQuoted(botConfig) });
+                };
+                
+                const msgV2 = { contextInfo: contextInfoV2 };
+                if (imageBuffer) {
+                    msgV2.image = imageBuffer;
+                    msgV2.caption = text;
+                } else {
+                    msgV2.text = text;
                 }
+                await sock.sendMessage(m.chat, msgV2, { quoted: getVerifiedQuoted(botConfig) });
                 break;
                 
             case 3:
