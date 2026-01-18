@@ -3,6 +3,7 @@ const https = require('https')
 
 /**
  * TikTok Downloader with multiple fallback APIs
+ * Returns FULL URLs (not relative paths)
  */
 
 const axiosInstance = axios.create({
@@ -13,14 +14,42 @@ const axiosInstance = axios.create({
     }
 })
 
+const TIKWM_BASE = 'https://tikwm.com'
+
+/**
+ * Ensure URL is absolute (not relative)
+ */
+function ensureAbsoluteUrl(url, base = TIKWM_BASE) {
+    if (!url) return null
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url
+    }
+    // Handle relative paths like /video/media/...
+    if (url.startsWith('/')) {
+        return base + url
+    }
+    return url
+}
+
+/**
+ * Download video as buffer from URL
+ */
+async function downloadVideoBuffer(videoUrl) {
+    const response = await axiosInstance.get(videoUrl, {
+        responseType: 'arraybuffer',
+        timeout: 60000
+    })
+    return Buffer.from(response.data)
+}
+
 /**
  * Try multiple APIs to download TikTok video
  */
 async function downloadTikTok(url) {
     const apis = [
         () => tryAPI1(url), // tikwm.com
-        () => tryAPI2(url), // ttsave style
-        () => tryAPI3(url), // musicaldown style
+        () => tryAPI2(url), // tikmate
+        () => tryAPI3(url), // tikwm GET
         () => tryAPI4(url)  // ssstik style
     ]
 
@@ -30,6 +59,12 @@ async function downloadTikTok(url) {
         try {
             const result = await api()
             if (result && result.success && result.videoUrl) {
+                // Ensure URL is absolute
+                result.videoUrl = ensureAbsoluteUrl(result.videoUrl)
+                if (result.audioUrl) result.audioUrl = ensureAbsoluteUrl(result.audioUrl)
+                if (result.coverUrl) result.coverUrl = ensureAbsoluteUrl(result.coverUrl)
+                
+                console.log(`[TikTok] Got video URL: ${result.videoUrl?.substring(0, 50)}...`)
                 return result
             }
         } catch (err) {
@@ -41,8 +76,20 @@ async function downloadTikTok(url) {
     throw lastError || new Error('Semua API TikTok gagal')
 }
 
-// API 1: tikwm.com - Most reliable
+/**
+ * Download TikTok as Buffer (for plugins that need buffer)
+ */
+async function downloadTikTokBuffer(url) {
+    const result = await downloadTikTok(url)
+    if (result.success && result.videoUrl) {
+        result.buffer = await downloadVideoBuffer(result.videoUrl)
+    }
+    return result
+}
+
+// API 1: tikwm.com POST - Most reliable
 async function tryAPI1(url) {
+    console.log('[TikTok] Trying tikwm.com POST API...')
     const { data } = await axiosInstance.post('https://tikwm.com/api/', 
         new URLSearchParams({ url, count: 12, cursor: 0, web: 1, hd: 1 }),
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
@@ -71,8 +118,9 @@ async function tryAPI1(url) {
     throw new Error('tikwm response invalid')
 }
 
-// API 2: Direct API
+// API 2: tikmate
 async function tryAPI2(url) {
+    console.log('[TikTok] Trying tikmate API...')
     const { data } = await axiosInstance.get(
         `https://api.tikmate.app/api/lookup?url=${encodeURIComponent(url)}`
     )
@@ -89,8 +137,9 @@ async function tryAPI2(url) {
     throw new Error('tikmate response invalid')
 }
 
-// API 3: SnapTik style
+// API 3: tikwm GET
 async function tryAPI3(url) {
+    console.log('[TikTok] Trying tikwm.com GET API...')
     const { data } = await axiosInstance.get(
         `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}&hd=1`
     )
@@ -110,6 +159,7 @@ async function tryAPI3(url) {
 
 // API 4: SSSTik style
 async function tryAPI4(url) {
+    console.log('[TikTok] Trying ssstik API...')
     const { data } = await axiosInstance.post('https://ssstik.io/abc?url=dl', 
         `id=${encodeURIComponent(url)}&locale=en&tt=aGlsZXM=`,
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
@@ -131,4 +181,8 @@ async function tryAPI4(url) {
     throw new Error('ssstik response invalid')
 }
 
-module.exports = { downloadTikTok }
+module.exports = { 
+    downloadTikTok,
+    downloadTikTokBuffer,
+    downloadVideoBuffer
+}

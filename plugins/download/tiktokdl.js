@@ -1,4 +1,5 @@
-const { downloadTikTok } = require('../../src/scraper/tiktok')
+const { downloadTikTok, downloadVideoBuffer } = require('../../src/scraper/tiktok')
+const axios = require('axios')
 
 const pluginConfig = {
     name: 'tiktokdl',
@@ -78,8 +79,12 @@ async function handler(m, { sock }) {
         
         caption += `\n> _KYOKO MD v2.0_`
         
+        // Download video as buffer first to avoid ENOENT error
+        console.log('[tiktokdl] Downloading video buffer...')
+        const videoBuffer = await downloadVideoBuffer(result.videoUrl)
+        
         await sock.sendMessage(m.chat, {
-            video: { url: result.videoUrl },
+            video: videoBuffer,
             caption: caption.trim()
         }, { quoted: m })
         
