@@ -1,4 +1,4 @@
 @echo off
 git add -A
-git commit -m "fix puter crash - lazy load library and add fallback to prevent startup undefined error"
+git commit -m "fix critical crash - removed Puter.js library dependency, using stable direct API calls"
 git push origin main
