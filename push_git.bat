@@ -1,4 +1,4 @@
 @echo off
 git add -A
-git commit -m "fix toblack - smart skin detection only transforms skin pixels to dark"
+git commit -m "feat toblack - use Pollinations and Prodia AI APIs for dark skin generation"
 git push origin main
