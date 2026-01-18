@@ -1,24 +1,14 @@
-const axios = require('axios')
-const https = require('https')
+const ytdl = require('@distube/ytdl-core')
 const yts = require('yt-search')
-const cheerio = require('cheerio')
 const fs = require('fs')
 const path = require('path')
 
 /**
- * YouTube Downloader using multiple free APIs
- * Vevioz, yt5s, ssyoutube - all provide direct links
+ * YouTube Downloader using @distube/ytdl-core
+ * This is a maintained fork of ytdl-core with better reliability
  */
 class YouTubeDownloader {
     constructor() {
-        this.axios = axios.create({
-            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-            timeout: 60000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-        })
-        
         this.tempDir = path.join(process.cwd(), 'temp')
         if (!fs.existsSync(this.tempDir)) {
             fs.mkdirSync(this.tempDir, { recursive: true })
@@ -26,20 +16,15 @@ class YouTubeDownloader {
     }
 
     validateURL(url) {
-        return /youtu\.?be/i.test(url)
+        return ytdl.validateURL(url)
     }
 
     getVideoId(url) {
-        const patterns = [
-            /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
-            /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
-            /[?&]v=([a-zA-Z0-9_-]{11})/
-        ]
-        for (const pattern of patterns) {
-            const match = url.match(pattern)
-            if (match) return match[1]
+        try {
+            return ytdl.getVideoID(url)
+        } catch (e) {
+            return null
         }
-        return null
     }
 
     normalizeUrl(url) {
@@ -49,206 +34,138 @@ class YouTubeDownloader {
     }
 
     async getInfo(url) {
-        const videoId = this.getVideoId(url)
-        if (!videoId) return { success: false, error: 'Invalid URL' }
         try {
-            const result = await yts({ videoId })
-            return { success: true, videoId, title: result.title, thumbnail: result.thumbnail, author: result.author?.name }
+            const videoId = this.getVideoId(url)
+            if (!videoId) return { success: false, error: 'Invalid URL' }
+            
+            const info = await ytdl.getInfo(url)
+            return {
+                success: true,
+                videoId,
+                title: info.videoDetails.title,
+                thumbnail: info.videoDetails.thumbnails?.[0]?.url,
+                author: info.videoDetails.author?.name,
+                duration: info.videoDetails.lengthSeconds,
+                viewCount: info.videoDetails.viewCount
+            }
         } catch (err) {
             return { success: false, error: err.message }
         }
     }
 
+    /**
+     * Download video as buffer
+     */
     async downloadVideo(url, quality = '720') {
         const fullUrl = this.normalizeUrl(url)
-        const videoId = this.getVideoId(fullUrl)
-        if (!videoId) throw new Error('Video ID tidak ditemukan')
-
-        const methods = [
-            () => this.veviozMethod(videoId, 'mp4'),
-            () => this.yt5sMethod(fullUrl, 'mp4'),
-            () => this.y2mateMethod(fullUrl, 'mp4')
-        ]
-
-        for (const method of methods) {
-            try {
-                const result = await method()
-                if (result?.success && result?.url) {
-                    console.log('[YouTubeDownloader] Got direct download URL')
-                    return result
-                }
-            } catch (err) {
-                console.log(`[YouTubeDownloader] Method failed: ${err.message}`)
+        
+        console.log('[YouTubeDownloader] Downloading video with ytdl-core...')
+        
+        try {
+            const info = await ytdl.getInfo(fullUrl)
+            const title = info.videoDetails.title || 'YouTube Video'
+            
+            // Get best video+audio format
+            const format = ytdl.chooseFormat(info.formats, { 
+                quality: 'highestvideo',
+                filter: format => format.hasVideo && format.hasAudio
+            }) || ytdl.chooseFormat(info.formats, {
+                quality: 'highest'
+            })
+            
+            if (!format) {
+                throw new Error('No suitable format found')
             }
+            
+            // Download as buffer
+            const chunks = []
+            const stream = ytdl.downloadFromInfo(info, { format })
+            
+            return new Promise((resolve, reject) => {
+                stream.on('data', chunk => chunks.push(chunk))
+                stream.on('end', () => {
+                    const buffer = Buffer.concat(chunks)
+                    console.log(`[YouTubeDownloader] ✓ Downloaded ${buffer.length} bytes`)
+                    resolve({
+                        success: true,
+                        buffer,
+                        title,
+                        format: format.qualityLabel || format.quality
+                    })
+                })
+                stream.on('error', reject)
+            })
+            
+        } catch (err) {
+            console.error('[YouTubeDownloader] Error:', err.message)
+            throw new Error(`YouTube download error: ${err.message}`)
         }
-
-        throw new Error('Semua API gagal. Coba lagi nanti.')
     }
 
+    /**
+     * Download audio as buffer
+     */
     async downloadAudio(url, bitrate = '128') {
         const fullUrl = this.normalizeUrl(url)
-        const videoId = this.getVideoId(fullUrl)
-        if (!videoId) throw new Error('Video ID tidak ditemukan')
-
-        const methods = [
-            () => this.veviozMethod(videoId, 'mp3'),
-            () => this.yt5sMethod(fullUrl, 'mp3'),
-            () => this.y2mateMethod(fullUrl, 'mp3')
-        ]
-
-        for (const method of methods) {
-            try {
-                const result = await method()
-                if (result?.success && result?.url) {
-                    console.log('[YouTubeDownloader] Got direct audio URL')
-                    return result
-                }
-            } catch (err) {
-                console.log(`[YouTubeDownloader] Audio method failed: ${err.message}`)
-            }
-        }
-
-        throw new Error('Semua API audio gagal.')
-    }
-
-    /**
-     * Vevioz API - returns direct embed link
-     */
-    async veviozMethod(videoId, format) {
-        console.log('[YouTubeDownloader] Trying Vevioz API...')
         
-        // Get the button page
-        const { data: html } = await this.axios.get(
-            `https://api.vevioz.com/api/button/${format}/${videoId}`,
-            { headers: { 'Accept': 'text/html' } }
-        )
+        console.log('[YouTubeDownloader] Downloading audio with ytdl-core...')
         
-        const $ = cheerio.load(html)
-        
-        // Find download link
-        let downloadUrl = null
-        let title = 'YouTube'
-        
-        // Try different selectors
-        $('a.download-btn, a[download], a[href*="download"], a[href*=".mp3"], a[href*=".mp4"]').each((i, el) => {
-            const href = $(el).attr('href')
-            if (href && href.startsWith('http')) {
-                downloadUrl = href
-                return false // break
-            }
-        })
-        
-        // Try data attributes
-        if (!downloadUrl) {
-            $('button[data-url], a[data-url]').each((i, el) => {
-                const dataUrl = $(el).attr('data-url')
-                if (dataUrl) {
-                    downloadUrl = dataUrl
-                    return false
-                }
-            })
-        }
-
-        // Get title
-        const titleEl = $('title, h1, .title').first().text()
-        if (titleEl) title = titleEl.replace(/\s*-\s*vevioz/i, '').trim()
-        
-        if (downloadUrl) {
-            return { success: true, url: downloadUrl, title }
-        }
-        
-        throw new Error('Vevioz: No download link found')
-    }
-
-    /**
-     * yt5s.biz API - alternate source
-     */
-    async yt5sMethod(url, format) {
-        console.log('[YouTubeDownloader] Trying yt5s API...')
-        
-        // Step 1: Analyze video
-        const { data: analyzeData } = await this.axios.post('https://yt5s.biz/mates/analyzeV2/ajax', 
-            new URLSearchParams({
-                k_query: url,
-                k_page: 'home',
-                hl: 'en',
-                q_auto: 0
-            }),
-            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-        )
-        
-        if (!analyzeData?.links) throw new Error('yt5s: No links')
-        
-        const links = analyzeData.links[format] || {}
-        const linkKeys = Object.keys(links)
-        
-        if (linkKeys.length === 0) throw new Error('yt5s: No format links')
-        
-        // Get first available quality
-        const firstKey = linkKeys[0]
-        const linkInfo = links[firstKey]
-        
-        // Step 2: Convert
-        const { data: convertData } = await this.axios.post('https://yt5s.biz/mates/convertV2/index',
-            new URLSearchParams({
-                vid: analyzeData.vid,
-                k: linkInfo.k
-            }),
-            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-        )
-        
-        if (convertData?.dlink) {
-            return { success: true, url: convertData.dlink, title: analyzeData.title }
-        }
-        
-        throw new Error('yt5s: Convert failed')
-    }
-
-    /**
-     * y2mate.nu API (different from .com)
-     */
-    async y2mateMethod(url, format) {
-        console.log('[YouTubeDownloader] Trying y2mate.nu API...')
-        
-        const { data } = await this.axios.post('https://www.y2mate.nu/mates/en/analyze/ajax',
-            new URLSearchParams({
-                url: url,
-                q_auto: 1,
-                ajax: 1
-            }),
-            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-        )
-        
-        if (data?.result) {
-            const $ = cheerio.load(data.result)
-            let downloadUrl = null
+        try {
+            const info = await ytdl.getInfo(fullUrl)
+            const title = info.videoDetails.title || 'YouTube Audio'
             
-            const selector = format === 'mp3' ? 'a[href*="mp3"]' : 'a[href*="mp4"]'
-            $(selector + ', a.btn-success, a[download]').each((i, el) => {
-                const href = $(el).attr('href')
-                if (href && href.startsWith('http')) {
-                    downloadUrl = href
-                    return false
-                }
+            // Get best audio format
+            const format = ytdl.chooseFormat(info.formats, { 
+                quality: 'highestaudio',
+                filter: 'audioonly'
             })
             
-            if (downloadUrl) {
-                return { success: true, url: downloadUrl, title: 'YouTube' }
+            if (!format) {
+                throw new Error('No audio format found')
             }
+            
+            // Download as buffer
+            const chunks = []
+            const stream = ytdl.downloadFromInfo(info, { format })
+            
+            return new Promise((resolve, reject) => {
+                stream.on('data', chunk => chunks.push(chunk))
+                stream.on('end', () => {
+                    const buffer = Buffer.concat(chunks)
+                    console.log(`[YouTubeDownloader] ✓ Downloaded audio ${buffer.length} bytes`)
+                    resolve({
+                        success: true,
+                        buffer,
+                        title,
+                        bitrate: format.audioBitrate || 128
+                    })
+                })
+                stream.on('error', reject)
+            })
+            
+        } catch (err) {
+            console.error('[YouTubeDownloader] Audio Error:', err.message)
+            throw new Error(`YouTube audio error: ${err.message}`)
         }
-        
-        throw new Error('y2mate.nu: No result')
     }
 
     async search(query, limit = 10) {
-        const results = await yts(query)
-        return { success: true, videos: results.videos.slice(0, limit) }
-    }
-
-    cleanup(filePath) {
         try {
-            if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath)
-        } catch (e) {}
+            const results = await yts(query)
+            return { 
+                success: true, 
+                videos: results.videos.slice(0, limit).map(v => ({
+                    title: v.title,
+                    url: v.url,
+                    duration: v.duration.timestamp,
+                    views: v.views,
+                    author: v.author?.name,
+                    thumbnail: v.thumbnail
+                }))
+            }
+        } catch (err) {
+            return { success: false, error: err.message }
+        }
     }
 }
 

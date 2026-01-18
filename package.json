@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@bochilteam/scraper-primbon": "^5.0.0",
+    "@distube/ytdl-core": "^4.16.12",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@google/generative-ai": "^0.24.1",
     "@hapi/boom": "^10.0.1",
