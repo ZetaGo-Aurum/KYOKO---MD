@@ -318,11 +318,12 @@ async function handler(m, { sock, config: botConfig, db, uptime }) {
     const botMode = groupData.botMode || 'md';
     const text = buildMenuText(m, botConfig, db, uptime, botMode);
     
-    const imagePath = path.join(process.cwd(), 'assets', 'images', 'kyoko.jpg');
-    const thumbPath = path.join(process.cwd(), 'assets', 'images', 'kyoko2.jpg');
+    // Assets paths
+    const bannerPath = path.join(process.cwd(), 'assets', 'images', 'ourin.jpg');     // Banner utama
+    const thumbPath = path.join(process.cwd(), 'assets', 'images', 'ourin2.jpg');     // Gambar kecil/thumbnail
     const videoPath = path.join(process.cwd(), 'assets', 'video', 'kyoko.mp4');
     
-    let imageBuffer = fs.existsSync(imagePath) ? fs.readFileSync(imagePath) : null;
+    let imageBuffer = fs.existsSync(bannerPath) ? fs.readFileSync(bannerPath) : null;
     let thumbBuffer = fs.existsSync(thumbPath) ? fs.readFileSync(thumbPath) : null;
     let videoBuffer = fs.existsSync(videoPath) ? fs.readFileSync(videoPath) : null;
     
@@ -337,15 +338,11 @@ async function handler(m, { sock, config: botConfig, db, uptime }) {
                 break;
                 
             case 2:
-                // Menu V2: Standard - Image + Caption + Thumbnail (works on all devices)
+                // Menu V2: Standard - Banner + Caption + Small Thumbnail (works on all devices)
                 const saluranIdV2 = botConfig.saluran?.id || '120363208449943317@newsletter';
                 const saluranNameV2 = botConfig.saluran?.name || botConfig.bot?.name || 'KYOKO MD';
                 
-                // Load thumbnail from ourin.jpg
-                const ourinPath = path.join(process.cwd(), 'assets', 'images', 'ourin.jpg');
-                const ourinThumb = fs.existsSync(ourinPath) ? fs.readFileSync(ourinPath) : thumbBuffer;
-                
-                // Context info with thumbnail
+                // Context info with small thumbnail (ourin2.jpg)
                 const contextInfoV2 = {
                     mentionedJid: [m.sender],
                     forwardingScore: 9999,
@@ -357,18 +354,19 @@ async function handler(m, { sock, config: botConfig, db, uptime }) {
                     },
                     externalAdReply: {
                         title: botConfig.bot?.name || 'KYOKO MD',
-                        body: `v${botConfig.bot?.version || '2.0'} • Fast Response Bot`,
+                        body: `v${botConfig.bot?.version || '2.0'} • PUBLIC`,
                         sourceUrl: botConfig.saluran?.link || '',
                         mediaType: 1,
                         showAdAttribution: false,
-                        renderLargerThumbnail: true,
-                        thumbnail: ourinThumb
+                        renderLargerThumbnail: false,
+                        thumbnail: thumbBuffer  // Using ourin2.jpg as small thumbnail
                     }
                 };
                 
+                // Send main banner image (ourin.jpg) with caption
                 const msgV2 = { contextInfo: contextInfoV2 };
                 if (imageBuffer) {
-                    msgV2.image = imageBuffer;
+                    msgV2.image = imageBuffer;  // ourin.jpg as main banner
                     msgV2.caption = text;
                 } else {
                     msgV2.text = text;
@@ -595,26 +593,50 @@ async function handler(m, { sock, config: botConfig, db, uptime }) {
             default:
                 await m.reply(text);
         }
-        const audioPath = path.join(process.cwd(), 'assets', 'audio', 'kyoko.mp3');
+        // Send voice note with Kamisama Hajimemashita.mp3
+        const audioPath = path.join(process.cwd(), 'assets', 'audio', 'Kamisama Hajimemashita.mp3');
         if (fs.existsSync(audioPath)) {
             const { execSync } = require('child_process');
             const tempOpus = path.join(process.cwd(), 'assets', 'audio', 'temp_vn.opus');
+            
+            // Context for audio with small thumbnail
+            const audioContextInfo = {
+                mentionedJid: [m.sender],
+                forwardingScore: 9999,
+                isForwarded: true,
+                forwardedNewsletterMessageInfo: {
+                    newsletterJid: botConfig.saluran?.id || '120363208449943317@newsletter',
+                    newsletterName: botConfig.saluran?.name || botConfig.bot?.name || 'KYOKO MD',
+                    serverMessageId: 127
+                },
+                externalAdReply: {
+                    title: botConfig.bot?.name || 'KYOKO MD',
+                    body: `v${botConfig.bot?.version || '2.0'} • PUBLIC`,
+                    sourceUrl: botConfig.saluran?.link || '',
+                    mediaType: 1,
+                    showAdAttribution: false,
+                    renderLargerThumbnail: false,
+                    thumbnail: thumbBuffer  // ourin2.jpg as thumbnail
+                }
+            };
+            
             try {
                 execSync(`ffmpeg -y -i "${audioPath}" -c:a libopus -b:a 64k "${tempOpus}"`, { stdio: 'ignore' });
                 await sock.sendMessage(m.chat, {
                     audio: fs.readFileSync(tempOpus),
                     mimetype: 'audio/ogg; codecs=opus',
                     ptt: true,
-                    contextInfo: getContextInfo(botConfig, m, thumbBuffer)
+                    contextInfo: audioContextInfo
                 }, { quoted: getVerifiedQuoted(botConfig) });
                 
                 if (fs.existsSync(tempOpus)) fs.unlinkSync(tempOpus);
             } catch (ffmpegErr) {
+                // Fallback: send MP3 directly as voice note
                 await sock.sendMessage(m.chat, {
                     audio: fs.readFileSync(audioPath),
                     mimetype: 'audio/mpeg',
                     ptt: true,
-                    contextInfo: getContextInfo(botConfig, m, thumbBuffer)
+                    contextInfo: audioContextInfo
                 }, { quoted: getVerifiedQuoted(botConfig) });
             }
         }
