@@ -3,258 +3,289 @@ const FormData = require('form-data');
 require('dotenv').config();
 
 /**
- * TRUE IMAGE-TO-IMAGE Transformation using Stability AI API
- * - Uses init_image parameter for reference image
- * - Uses image_strength parameter to control preservation of original
- * - Requires STABILITY_API_KEY in .env (free credits available)
+ * TRUE IMAGE-TO-IMAGE Multi-Provider System
  * 
- * Get your FREE API key at: https://platform.stability.ai/account/keys
- * (25 free credits for new users)
+ * PROVIDERS BY CREDITS:
+ * 1. Stability AI - UNLIMITED (Community License for <$1M revenue orgs)
+ * 2. Getimg.ai - 40 FREE credits/day
+ * 3. Clipdrop - 100 FREE credits/month
+ * 4. HuggingFace - Fallback text2img (not true img2img but works)
+ * 
+ * Get API keys:
+ * - Stability: https://platform.stability.ai/account/keys (UNLIMITED Community License)
+ * - Getimg: https://getimg.ai/tools/api (40/day free)
+ * - Clipdrop: https://clipdrop.co/apis (100/month free)
  */
 
 const STABILITY_API_KEY = process.env.STABILITY_API_KEY;
+const GETIMG_API_KEY = process.env.GETIMG_API_KEY;
+const CLIPDROP_API_KEY = process.env.CLIPDROP_API_KEY;
 const HF_TOKEN = process.env.HF_TOKEN;
 
 /**
- * TRUE Img2Img using Stability AI API
- * @param {Buffer} imageBuffer - Reference image that MUST be preserved
- * @param {string} prompt - Modification prompt (skin color, style, etc)
- * @param {Object} options - Additional options
- * @param {number} options.strength - Image strength 0-1 (higher = more faithful to original, default: 0.65)
+ * Upload image to temporary host for URL access
  */
-async function img2img(imageBuffer, prompt, options = {}) {
-    const {
-        strength = 0.65, // Higher = more faithful to original image
-        negativePrompt = 'blurry, bad quality, distorted, deformed'
-    } = options;
+async function uploadToTempHost(imageBuffer) {
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('reqtype', 'fileupload');
+    form.append('userhash', '');
+    form.append('fileToUpload', imageBuffer, { filename: 'image.jpg' });
 
-    // Check if Stability API key exists
-    if (!STABILITY_API_KEY) {
-        console.warn('[Stability] No API key found. Get free key at: https://platform.stability.ai/account/keys');
-        console.log('[Stability] Falling back to HuggingFace text2img...');
-        return await fallbackToHF(prompt);
+    const response = await axios.post('https://catbox.moe/user/api.php', form, {
+        headers: form.getHeaders(),
+        timeout: 30000
+    });
+
+    const imageUrl = response.data?.trim();
+    if (!imageUrl || !imageUrl.startsWith('http')) {
+        throw new Error('Failed to upload image');
     }
+    return imageUrl;
+}
 
-    console.log(`[Stability] Starting TRUE img2img transformation...`);
-    console.log(`[Stability] Strength: ${strength} (higher = more faithful to original)`);
-    console.log(`[Stability] Prompt: ${prompt.substring(0, 50)}...`);
+// ============ PROVIDER 1: STABILITY AI (UNLIMITED) ============
+async function stabilityImg2Img(imageBuffer, prompt, strength = 0.65) {
+    if (!STABILITY_API_KEY) return null;
+
+    console.log('[Stability] Using Stability AI (UNLIMITED Community License)...');
 
     try {
-        // Prepare multipart form data
         const formData = new FormData();
-        formData.append('init_image', imageBuffer, {
-            filename: 'image.png',
-            contentType: 'image/png'
-        });
+        formData.append('init_image', imageBuffer, { filename: 'image.png', contentType: 'image/png' });
         formData.append('init_image_mode', 'IMAGE_STRENGTH');
         formData.append('image_strength', strength.toString());
         formData.append('text_prompts[0][text]', prompt);
         formData.append('text_prompts[0][weight]', '1');
-        formData.append('text_prompts[1][text]', negativePrompt);
-        formData.append('text_prompts[1][weight]', '-1');
         formData.append('cfg_scale', '7');
         formData.append('samples', '1');
         formData.append('steps', '30');
-
-        console.log('[Stability] Sending to SDXL img2img API...');
 
         const response = await axios.post(
             'https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/image-to-image',
             formData,
             {
-                headers: {
-                    ...formData.getHeaders(),
-                    'Authorization': `Bearer ${STABILITY_API_KEY}`,
-                    'Accept': 'application/json'
-                },
+                headers: { ...formData.getHeaders(), 'Authorization': `Bearer ${STABILITY_API_KEY}`, 'Accept': 'application/json' },
                 timeout: 120000
             }
         );
 
-        if (response.data.artifacts && response.data.artifacts[0]) {
-            const base64Image = response.data.artifacts[0].base64;
-            console.log('[Stability] ✓ TRUE img2img transformation complete!');
-            
-            return {
-                success: true,
-                buffer: Buffer.from(base64Image, 'base64'),
-                model: 'SDXL',
-                strength: strength
-            };
-        } else {
-            throw new Error('No image returned from API');
+        if (response.data.artifacts?.[0]) {
+            console.log('[Stability] ✓ Success!');
+            return Buffer.from(response.data.artifacts[0].base64, 'base64');
         }
-
     } catch (error) {
-        const errorMsg = error.response?.data?.message || error.message;
-        console.error('[Stability] Error:', errorMsg);
-        
-        // Fallback to HuggingFace if Stability fails
-        if (HF_TOKEN) {
-            console.log('[Stability] Falling back to HuggingFace...');
-            return await fallbackToHF(prompt);
-        }
-
-        return {
-            success: false,
-            error: `Gagal transformasi: ${errorMsg}`
-        };
+        console.error('[Stability] Error:', error.response?.data?.message || error.message);
     }
+    return null;
 }
 
-/**
- * Fallback to HuggingFace text2img
- */
-async function fallbackToHF(prompt) {
-    if (!HF_TOKEN) {
-        return { success: false, error: 'No HF_TOKEN in .env' };
+// ============ PROVIDER 2: GETIMG.AI (40/day FREE) ============
+async function getimgImg2Img(imageBuffer, prompt, strength = 0.65) {
+    if (!GETIMG_API_KEY) return null;
+
+    console.log('[Getimg] Using Getimg.ai (40 FREE/day)...');
+
+    try {
+        const base64Image = imageBuffer.toString('base64');
+
+        const response = await axios.post('https://api.getimg.ai/v1/stable-diffusion-xl/image-to-image', {
+            model: 'stable-diffusion-xl-v1-0',
+            prompt: prompt,
+            negative_prompt: 'blurry, bad quality, distorted',
+            image: base64Image,
+            strength: 1 - strength, // Getimg uses inverse (lower = more faithful)
+            steps: 30,
+            guidance: 7.5,
+            output_format: 'png'
+        }, {
+            headers: { 'Authorization': `Bearer ${GETIMG_API_KEY}`, 'Content-Type': 'application/json' },
+            timeout: 120000
+        });
+
+        if (response.data.image) {
+            console.log('[Getimg] ✓ Success!');
+            return Buffer.from(response.data.image, 'base64');
+        }
+    } catch (error) {
+        console.error('[Getimg] Error:', error.response?.data?.error || error.message);
     }
+    return null;
+}
+
+// ============ PROVIDER 3: CLIPDROP (100/month FREE) ============
+async function clipdropImg2Img(imageBuffer, prompt) {
+    if (!CLIPDROP_API_KEY) return null;
+
+    console.log('[Clipdrop] Using Clipdrop (100 FREE/month)...');
+
+    try {
+        const formData = new FormData();
+        formData.append('image_file', imageBuffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
+        formData.append('prompt', prompt);
+
+        const response = await axios.post('https://clipdrop-api.co/replace-background/v1', formData, {
+            headers: { ...formData.getHeaders(), 'x-api-key': CLIPDROP_API_KEY },
+            responseType: 'arraybuffer',
+            timeout: 60000
+        });
+
+        console.log('[Clipdrop] ✓ Success!');
+        return Buffer.from(response.data);
+    } catch (error) {
+        console.error('[Clipdrop] Error:', error.message);
+    }
+    return null;
+}
+
+// ============ PROVIDER 4: HUGGINGFACE (Fallback) ============
+async function hfTextToImage(prompt) {
+    if (!HF_TOKEN) return null;
+
+    console.log('[HuggingFace] Fallback text2img (not true img2img)...');
 
     try {
         const response = await axios.post(
             'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0',
             { inputs: prompt },
             {
-                headers: {
-                    'Authorization': `Bearer ${HF_TOKEN}`,
-                    'Content-Type': 'application/json',
-                    'Accept': 'image/png'
-                },
+                headers: { 'Authorization': `Bearer ${HF_TOKEN}`, 'Content-Type': 'application/json', 'Accept': 'image/png' },
                 responseType: 'arraybuffer',
                 timeout: 120000
             }
         );
 
-        return {
-            success: true,
-            buffer: Buffer.from(response.data),
-            model: 'SDXL (HF Fallback)',
-            note: 'Generated via HuggingFace - not true img2img'
-        };
+        console.log('[HuggingFace] ✓ Success!');
+        return Buffer.from(response.data);
     } catch (error) {
-        return {
-            success: false,
-            error: `HF Fallback failed: ${error.message}`
-        };
+        console.error('[HuggingFace] Error:', error.message);
     }
+    return null;
+}
+
+/**
+ * MAIN FUNCTION: Try all providers in order
+ */
+async function img2img(imageBuffer, prompt, options = {}) {
+    const { strength = 0.65 } = options;
+    let result = null;
+    let provider = 'none';
+
+    console.log(`[Nanobanana] Starting TRUE img2img with strength ${strength}...`);
+    console.log(`[Nanobanana] Prompt: ${prompt.substring(0, 60)}...`);
+
+    // Try providers in order of generosity
+    result = await stabilityImg2Img(imageBuffer, prompt, strength);
+    if (result) { provider = 'Stability AI (UNLIMITED)'; }
+
+    if (!result) {
+        result = await getimgImg2Img(imageBuffer, prompt, strength);
+        if (result) { provider = 'Getimg.ai (40/day)'; }
+    }
+
+    if (!result) {
+        result = await clipdropImg2Img(imageBuffer, prompt);
+        if (result) { provider = 'Clipdrop (100/month)'; }
+    }
+
+    if (!result) {
+        result = await hfTextToImage(prompt);
+        if (result) { provider = 'HuggingFace (fallback)'; }
+    }
+
+    if (result) {
+        return { success: true, buffer: result, model: provider, strength };
+    }
+
+    return {
+        success: false,
+        error: 'Semua provider gagal. Pastikan minimal satu API key ada di .env:\n' +
+               '• STABILITY_API_KEY (UNLIMITED - https://platform.stability.ai)\n' +
+               '• GETIMG_API_KEY (40/day - https://getimg.ai)\n' +
+               '• CLIPDROP_API_KEY (100/month - https://clipdrop.co)\n' +
+               '• HF_TOKEN (fallback - https://huggingface.co)'
+    };
 }
 
 // ============ SPECIALIZED FUNCTIONS ============
 
-/**
- * Transform to BLACK skin - preserves everything else
- */
 async function toBlack(imageBuffer) {
     return img2img(imageBuffer, 
-        'Transform this exact person to have very dark black ebony African skin tone. Keep exact same facial features, same pose, same clothes, same background, same lighting. Only change skin color to dark black ebony complexion. Photorealistic.',
-        { strength: 0.7 } // High strength = very faithful to original
-    );
-}
-
-/**
- * Transform to WHITE skin - preserves everything else
- */
-async function toWhite(imageBuffer) {
-    return img2img(imageBuffer,
-        'Transform this exact person to have fair white caucasian skin tone. Keep exact same facial features, same pose, same clothes, same background, same lighting. Only change skin color to fair white. Photorealistic.',
+        'Transform this exact person to have very dark black ebony African skin tone. Keep exact same facial features, same pose, same clothes, same background. Only change skin color.',
         { strength: 0.7 }
     );
 }
 
-/**
- * Transform to ANIME style - preserves pose and composition
- */
-async function toAnime(imageBuffer) {
+async function toWhite(imageBuffer) {
     return img2img(imageBuffer,
-        'Transform this image into anime style illustration. Same pose, same composition. Clean anime lineart, big expressive eyes, smooth cel shading. High quality anime art. Masterpiece.',
-        { strength: 0.5 } // Lower strength for style transfer
+        'Transform this exact person to have fair white caucasian skin tone. Keep exact same facial features, same pose, same clothes, same background. Only change skin color.',
+        { strength: 0.7 }
     );
 }
 
-/**
- * Transform to CARTOON style
- */
-async function toCartoon(imageBuffer) {
+async function toAnime(imageBuffer) {
     return img2img(imageBuffer,
-        'Transform this image into 3D cartoon illustration style like Disney Pixar. Same pose, same composition. Bright colors, smooth shading, clean render.',
+        'Transform this image into anime style illustration. Same pose, same composition. Clean anime lineart, big expressive eyes.',
         { strength: 0.5 }
     );
 }
 
-/**
- * Transform to MANGA style (black and white)
- */
+async function toCartoon(imageBuffer) {
+    return img2img(imageBuffer,
+        'Transform this image into 3D cartoon illustration style like Disney Pixar. Same pose, bright colors.',
+        { strength: 0.5 }
+    );
+}
+
 async function toManga(imageBuffer) {
     return img2img(imageBuffer,
-        'Transform this image into black and white manga style. Same pose. Clean ink lineart, screentone shading, high contrast. Japanese manga panel aesthetic.',
+        'Transform this image into black and white manga style. Clean ink lineart, screentone shading.',
         { strength: 0.45 }
     );
 }
 
-/**
- * Transform to CHINESE art style
- */
 async function toChinese(imageBuffer) {
     return img2img(imageBuffer,
-        'Transform this image into elegant chinese art style portrait. Soft elegant features, porcelain-like skin. Same pose. Beautiful lighting, asian art aesthetic.',
+        'Transform this image into elegant chinese art style portrait. Soft features, porcelain skin.',
         { strength: 0.55 }
     );
 }
 
-/**
- * Transform to COMIC style
- */
 async function toComic(imageBuffer) {
     return img2img(imageBuffer,
-        'Transform this image into western comic book style like Marvel DC. Bold outlines, vibrant colors, dynamic lighting. Same pose and composition.',
+        'Transform this image into western comic book style like Marvel DC. Bold outlines, vibrant colors.',
         { strength: 0.5 }
     );
 }
 
-/**
- * Add HIJAB to person
- */
 async function toHijab(imageBuffer) {
     return img2img(imageBuffer,
-        'Add an elegant modest hijab covering hair and neck to this person. Keep exact same face, same expression. Photorealistic hijab fashion.',
+        'Add an elegant modest hijab covering hair and neck. Keep exact same face, same expression.',
         { strength: 0.6 }
     );
 }
 
-/**
- * Transform to PRESIDENTIAL portrait
- */
 async function toPresident(imageBuffer) {
     return img2img(imageBuffer,
-        'Transform this person into a formal presidential portrait. Add formal black suit with red tie. Keep exact same face. Professional studio lighting, dignified pose.',
+        'Transform into formal presidential portrait. Add formal black suit with red tie. Keep same face.',
         { strength: 0.55 }
     );
 }
 
-// Legacy compatibility
 async function puterImg2Img(imageBuffer, prompt) {
     return img2img(imageBuffer, prompt, { strength: 0.65 });
 }
 
-// Text-to-image
-async function generateImage(prompt, model = 'sdxl') {
-    return fallbackToHF(prompt);
+async function generateImage(prompt) {
+    const result = await hfTextToImage(prompt);
+    if (result) return { success: true, buffer: result, model: 'HuggingFace SDXL' };
+    return { success: false, error: 'HF_TOKEN tidak ada di .env' };
 }
 
 module.exports = {
-    img2img,
-    generateImage,
-    toBlack,
-    toWhite,
-    toAnime,
-    toCartoon,
-    toManga,
-    toChinese,
-    toComic,
-    toHijab,
-    toPresident,
+    img2img, generateImage,
+    toBlack, toWhite, toAnime, toCartoon, toManga, toChinese, toComic, toHijab, toPresident,
     puterImg2Img
 };
 
-// Allow direct require
 module.exports = Object.assign(puterImg2Img, module.exports);
