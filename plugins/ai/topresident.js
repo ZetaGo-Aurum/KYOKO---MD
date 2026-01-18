@@ -1,10 +1,10 @@
-const nanoBanana = require('../../src/scraper/nanobanana')
+const nanobanana = require('../../src/scraper/nanobanana')
 
 const pluginConfig = {
     name: 'topresident',
     alias: ['president', 'presiden'],
     category: 'ai',
-    description: 'Transform foto menjadi presiden Indonesia',
+    description: 'Transform foto menjadi presiden Indonesia (SDXL)',
     usage: '.topresident',
     example: '.topresident',
     isOwner: false,
@@ -16,19 +16,21 @@ const pluginConfig = {
     isEnabled: true
 }
 
+// Model: SDXL (photorealistic)
 const PROMPT = `realistic portrait as Indonesian president,
-formal suit and red tie,
-authoritative expression, same identity,
+formal presidential suit black with red tie,
+authoritative dignified expression,
 studio lighting, photorealistic,
-presidential portrait style`
+official presidential portrait style, high detail`
 
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`🇮🇩 *ᴛᴏ ᴘʀᴇsɪᴅᴇɴᴛ*\n\n> Reply atau kirim gambar dengan caption .topresident`)
+        return m.reply(`🇮🇩 *ᴛᴏ ᴘʀᴇsɪᴅᴇɴᴛ (sᴅxʟ)*\n\n> Reply atau kirim gambar dengan caption .topresident`)
     }
     
-    m.react('🇮🇩')
+    await m.react('🇮🇩')
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan SDXL...\n> _Mohon bersabar..._`)
     
     try {
         let mediaBuffer
@@ -39,26 +41,28 @@ async function handler(m, { sock }) {
         }
         
         if (!mediaBuffer || !Buffer.isBuffer(mediaBuffer)) {
-            m.react('❌')
+            await m.react('❌')
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        const result = await nanoBanana(mediaBuffer, PROMPT)
+        // Use SDXL for photorealistic presidential portrait
+        const result = await nanobanana.generateUniversal(PROMPT)
         
-        if (!result?.imageUrl) {
-            m.react('❌')
-            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Tidak dapat memproses gambar`)
+        if (!result.success || !result.buffer) {
+            await m.react('❌')
+            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> ${result.error || 'Tidak dapat memproses gambar'}`)
         }
         
-        m.react('✨')
+        await m.react('✨')
         
         await sock.sendMessage(m.chat, {
-            image: { url: result.imageUrl },
-            caption: `🇮🇩 *ᴛᴏ ᴘʀᴇsɪᴅᴇɴᴛ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ`
+            image: result.buffer,
+            caption: `🇮🇩 *ᴛᴏ ᴘʀᴇsɪᴅᴇɴᴛ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'SDXL'}_`
         }, { quoted: m })
         
     } catch (error) {
-        m.react('❌')
+        console.error('[topresident] Error:', error)
+        await m.react('❌')
         m.reply(`❌ *ᴇʀʀᴏʀ*\n\n> ${error.message}`)
     }
 }

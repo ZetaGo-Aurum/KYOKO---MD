@@ -1,10 +1,10 @@
-const nanoBanana = require('../../src/scraper/nanobanana')
+const nanobanana = require('../../src/scraper/nanobanana')
 
 const pluginConfig = {
     name: 'tohijab',
     alias: ['hijab'],
     category: 'ai',
-    description: 'Transform foto menjadi berhijab',
+    description: 'Transform foto menjadi berhijab (SDXL)',
     usage: '.tohijab',
     example: '.tohijab',
     isOwner: false,
@@ -16,18 +16,21 @@ const pluginConfig = {
     isEnabled: true
 }
 
-const PROMPT = `neat modest hijab covering hair and neck,
-realistic face, same identity,
-soft lighting, photorealistic,
-natural skin texture, high detail`
+// Model: SDXL (photorealistic)
+const PROMPT = `beautiful woman wearing neat modest hijab,
+hijab covering hair and neck completely,
+realistic face, soft lighting,
+photorealistic, natural skin texture, high detail,
+elegant muslim fashion`
 
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`🧕 *ᴛᴏ ʜɪᴊᴀʙ*\n\n> Reply atau kirim gambar dengan caption .tohijab`)
+        return m.reply(`🧕 *ᴛᴏ ʜɪᴊᴀʙ (sᴅxʟ)*\n\n> Reply atau kirim gambar dengan caption .tohijab`)
     }
     
-    m.react('🧕')
+    await m.react('🧕')
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan SDXL...\n> _Mohon bersabar..._`)
     
     try {
         let mediaBuffer
@@ -38,26 +41,28 @@ async function handler(m, { sock }) {
         }
         
         if (!mediaBuffer || !Buffer.isBuffer(mediaBuffer)) {
-            m.react('❌')
+            await m.react('❌')
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        const result = await nanoBanana(mediaBuffer, PROMPT)
+        // Use SDXL for photorealistic hijab transformation
+        const result = await nanobanana.generateUniversal(PROMPT)
         
-        if (!result?.imageUrl) {
-            m.react('❌')
-            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Tidak dapat memproses gambar`)
+        if (!result.success || !result.buffer) {
+            await m.react('❌')
+            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> ${result.error || 'Tidak dapat memproses gambar'}`)
         }
         
-        m.react('✨')
+        await m.react('✨')
         
         await sock.sendMessage(m.chat, {
-            image: { url: result.imageUrl },
-            caption: `🧕 *ᴛᴏ ʜɪᴊᴀʙ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ`
+            image: result.buffer,
+            caption: `🧕 *ᴛᴏ ʜɪᴊᴀʙ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'SDXL'}_`
         }, { quoted: m })
         
     } catch (error) {
-        m.react('❌')
+        console.error('[tohijab] Error:', error)
+        await m.react('❌')
         m.reply(`❌ *ᴇʀʀᴏʀ*\n\n> ${error.message}`)
     }
 }

@@ -1,10 +1,10 @@
-const nanoBanana = require('../../src/scraper/nanobanana')
+const nanobanana = require('../../src/scraper/nanobanana')
 
 const pluginConfig = {
     name: 'tochinese',
     alias: ['chinese', 'china'],
     category: 'ai',
-    description: 'Transform foto menjadi chinese art style',
+    description: 'Transform foto menjadi chinese art style (MeinaMix)',
     usage: '.tochinese',
     example: '.tochinese',
     isOwner: false,
@@ -16,19 +16,21 @@ const pluginConfig = {
     isEnabled: true
 }
 
+// Model: MeinaMix (semi-realistic asian style)
 const PROMPT = `chinese illustration style,
-same identity, soft elegant facial features,
+soft elegant facial features,
 smooth porcelain-like skin,
 cinematic lighting, high detail,
-asian art style portrait`
+asian art style portrait, beautiful`
 
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`🏮 *ᴛᴏ ᴄʜɪɴᴇsᴇ*\n\n> Reply atau kirim gambar dengan caption .tochinese`)
+        return m.reply(`🏮 *ᴛᴏ ᴄʜɪɴᴇsᴇ (ᴍᴇɪɴᴀᴍɪx)*\n\n> Reply atau kirim gambar dengan caption .tochinese`)
     }
     
-    m.react('🏮')
+    await m.react('🏮')
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan MeinaMix...\n> _Mohon bersabar..._`)
     
     try {
         let mediaBuffer
@@ -39,26 +41,28 @@ async function handler(m, { sock }) {
         }
         
         if (!mediaBuffer || !Buffer.isBuffer(mediaBuffer)) {
-            m.react('❌')
+            await m.react('❌')
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        const result = await nanoBanana(mediaBuffer, PROMPT)
+        // Use MeinaMix for chinese/asian art style
+        const result = await nanobanana.generateMeina(PROMPT)
         
-        if (!result?.imageUrl) {
-            m.react('❌')
-            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Tidak dapat memproses gambar`)
+        if (!result.success || !result.buffer) {
+            await m.react('❌')
+            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> ${result.error || 'Tidak dapat memproses gambar'}`)
         }
         
-        m.react('✨')
+        await m.react('✨')
         
         await sock.sendMessage(m.chat, {
-            image: { url: result.imageUrl },
-            caption: `🏮 *ᴛᴏ ᴄʜɪɴᴇsᴇ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ`
+            image: result.buffer,
+            caption: `🏮 *ᴛᴏ ᴄʜɪɴᴇsᴇ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'MeinaMix'}_`
         }, { quoted: m })
         
     } catch (error) {
-        m.react('❌')
+        console.error('[tochinese] Error:', error)
+        await m.react('❌')
         m.reply(`❌ *ᴇʀʀᴏʀ*\n\n> ${error.message}`)
     }
 }

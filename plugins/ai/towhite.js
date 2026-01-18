@@ -1,10 +1,10 @@
-const nanoBanana = require('../../src/scraper/nanobanana')
+const nanobanana = require('../../src/scraper/nanobanana')
 
 const pluginConfig = {
     name: 'towhite',
     alias: ['white', 'putih'],
     category: 'ai',
-    description: 'Transform foto dengan skin tone lebih terang',
+    description: 'Transform foto dengan skin tone lebih terang (SDXL)',
     usage: '.towhite',
     example: '.towhite',
     isOwner: false,
@@ -16,18 +16,20 @@ const pluginConfig = {
     isEnabled: true
 }
 
-const PROMPT = `natural lighter skin tone,
-same identity, realistic face,
-even skin color, soft lighting,
-photorealistic, no overexposure`
+// Model: SDXL (photorealistic)
+const PROMPT = `person with fair white skin tone,
+caucasian complexion, same pose, same clothes,
+same background, photorealistic, high quality,
+natural skin texture, even lighting`
 
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`✨ *ᴛᴏ ᴡʜɪᴛᴇ*\n\n> Reply atau kirim gambar dengan caption .towhite`)
+        return m.reply(`✨ *ᴛᴏ ᴡʜɪᴛᴇ (sᴅxʟ)*\n\n> Reply atau kirim gambar dengan caption .towhite`)
     }
     
-    m.react('✨')
+    await m.react('✨')
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan SDXL...\n> _Mohon bersabar..._`)
     
     try {
         let mediaBuffer
@@ -38,26 +40,28 @@ async function handler(m, { sock }) {
         }
         
         if (!mediaBuffer || !Buffer.isBuffer(mediaBuffer)) {
-            m.react('❌')
+            await m.react('❌')
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        const result = await nanoBanana(mediaBuffer, PROMPT)
+        // Use SDXL for photorealistic skin transformation
+        const result = await nanobanana.generateUniversal(PROMPT)
         
-        if (!result?.imageUrl) {
-            m.react('❌')
-            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Tidak dapat memproses gambar`)
+        if (!result.success || !result.buffer) {
+            await m.react('❌')
+            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> ${result.error || 'Tidak dapat memproses gambar'}`)
         }
         
-        m.react('🔥')
+        await m.react('🔥')
         
         await sock.sendMessage(m.chat, {
-            image: { url: result.imageUrl },
-            caption: `✨ *ᴛᴏ ᴡʜɪᴛᴇ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ`
+            image: result.buffer,
+            caption: `✨ *ᴛᴏ ᴡʜɪᴛᴇ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'SDXL'}_`
         }, { quoted: m })
         
     } catch (error) {
-        m.react('❌')
+        console.error('[towhite] Error:', error)
+        await m.react('❌')
         m.reply(`❌ *ᴇʀʀᴏʀ*\n\n> ${error.message}`)
     }
 }

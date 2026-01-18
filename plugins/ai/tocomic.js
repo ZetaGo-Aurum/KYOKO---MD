@@ -1,10 +1,10 @@
-const nanoBanana = require('../../src/scraper/nanobanana')
+const nanobanana = require('../../src/scraper/nanobanana')
 
 const pluginConfig = {
     name: 'tocomic',
     alias: ['comic'],
     category: 'ai',
-    description: 'Transform foto menjadi comic style',
+    description: 'Transform foto menjadi comic style (Counterfeit)',
     usage: '.tocomic',
     example: '.tocomic',
     isOwner: false,
@@ -16,18 +16,20 @@ const pluginConfig = {
     isEnabled: true
 }
 
+// Model: Counterfeit (high quality illustration)
 const PROMPT = `western comic book style,
-same identity, bold outlines,
-dynamic lighting, vibrant colors,
-high detail comic illustration`
+bold outlines, dynamic lighting,
+vibrant colors, high detail,
+comic illustration, marvel dc style`
 
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`🦸 *ᴛᴏ ᴄᴏᴍɪᴄ*\n\n> Reply atau kirim gambar dengan caption .tocomic`)
+        return m.reply(`🦸 *ᴛᴏ ᴄᴏᴍɪᴄ (ᴄᴏᴜɴᴛᴇʀꜰᴇɪᴛ)*\n\n> Reply atau kirim gambar dengan caption .tocomic`)
     }
     
-    m.react('🦸')
+    await m.react('🦸')
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan Counterfeit...\n> _Mohon bersabar..._`)
     
     try {
         let mediaBuffer
@@ -38,26 +40,28 @@ async function handler(m, { sock }) {
         }
         
         if (!mediaBuffer || !Buffer.isBuffer(mediaBuffer)) {
-            m.react('❌')
+            await m.react('❌')
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        const result = await nanoBanana(mediaBuffer, PROMPT)
+        // Use Counterfeit for comic/illustration style
+        const result = await nanobanana.generateCounterfeit(PROMPT)
         
-        if (!result?.imageUrl) {
-            m.react('❌')
-            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Tidak dapat memproses gambar`)
+        if (!result.success || !result.buffer) {
+            await m.react('❌')
+            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> ${result.error || 'Tidak dapat memproses gambar'}`)
         }
         
-        m.react('✨')
+        await m.react('✨')
         
         await sock.sendMessage(m.chat, {
-            image: { url: result.imageUrl },
-            caption: `🦸 *ᴛᴏ ᴄᴏᴍɪᴄ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ`
+            image: result.buffer,
+            caption: `🦸 *ᴛᴏ ᴄᴏᴍɪᴄ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'Counterfeit'}_`
         }, { quoted: m })
         
     } catch (error) {
-        m.react('❌')
+        console.error('[tocomic] Error:', error)
+        await m.react('❌')
         m.reply(`❌ *ᴇʀʀᴏʀ*\n\n> ${error.message}`)
     }
 }

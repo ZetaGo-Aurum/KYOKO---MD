@@ -1,10 +1,10 @@
-const nanoBanana = require('../../src/scraper/nanobanana')
+const nanobanana = require('../../src/scraper/nanobanana')
 
 const pluginConfig = {
     name: 'tocartoon',
     alias: ['cartoon', 'kartun'],
     category: 'ai',
-    description: 'Transform foto menjadi cartoon style',
+    description: 'Transform foto menjadi cartoon style (DreamShaper)',
     usage: '.tocartoon',
     example: '.tocartoon',
     isOwner: false,
@@ -16,18 +16,20 @@ const pluginConfig = {
     isEnabled: true
 }
 
+// Model: DreamShaper (best for cartoon/stylized art)
 const PROMPT = `cartoon illustration style,
 same identity, simplified features,
-smooth shading, bright colors,
-clean cartoon render`
+smooth shading, bright vivid colors,
+clean cartoon render, disney pixar style`
 
 async function handler(m, { sock }) {
     const isImage = m.isImage || (m.quoted && m.quoted.isImage)
     if (!isImage) {
-        return m.reply(`🎨 *ᴛᴏ ᴄᴀʀᴛᴏᴏɴ*\n\n> Reply atau kirim gambar dengan caption .tocartoon`)
+        return m.reply(`🎨 *ᴛᴏ ᴄᴀʀᴛᴏᴏɴ (ᴅʀᴇᴀᴍsʜᴀᴘᴇʀ)*\n\n> Reply atau kirim gambar dengan caption .tocartoon`)
     }
     
-    m.react('🎨')
+    await m.react('🎨')
+    await m.reply(`⏳ *ᴘʀᴏᴄᴇssɪɴɢ...*\n\n> Menggunakan DreamShaper...\n> _Mohon bersabar..._`)
     
     try {
         let mediaBuffer
@@ -38,26 +40,28 @@ async function handler(m, { sock }) {
         }
         
         if (!mediaBuffer || !Buffer.isBuffer(mediaBuffer)) {
-            m.react('❌')
+            await m.react('❌')
             return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Gagal mengunduh gambar`)
         }
         
-        const result = await nanoBanana(mediaBuffer, PROMPT)
+        // Use DreamShaper for cartoon style
+        const result = await nanobanana.generateDream(PROMPT)
         
-        if (!result?.imageUrl) {
-            m.react('❌')
-            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> Tidak dapat memproses gambar`)
+        if (!result.success || !result.buffer) {
+            await m.react('❌')
+            return m.reply(`❌ *ɢᴀɢᴀʟ*\n\n> ${result.error || 'Tidak dapat memproses gambar'}`)
         }
         
-        m.react('✨')
+        await m.react('✨')
         
         await sock.sendMessage(m.chat, {
-            image: { url: result.imageUrl },
-            caption: `🎨 *ᴛᴏ ᴄᴀʀᴛᴏᴏɴ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ`
+            image: result.buffer,
+            caption: `🎨 *ᴛᴏ ᴄᴀʀᴛᴏᴏɴ*\n\n> ᴛʀᴀɴsꜰᴏʀᴍ ʙᴇʀʜᴀsɪʟ\n> _Model: ${result.model || 'DreamShaper'}_`
         }, { quoted: m })
         
     } catch (error) {
-        m.react('❌')
+        console.error('[tocartoon] Error:', error)
+        await m.react('❌')
         m.reply(`❌ *ᴇʀʀᴏʀ*\n\n> ${error.message}`)
     }
 }
