@@ -23,59 +23,61 @@ async function puterImg2Img(imageBuffer, prompt) {
 
     // 2. Try using the Puter.js library
     try {
-        console.log('[Puter] Token found. Attempting to use Puter.js library...');
+        console.log(`[Puter] Token found (${token.substring(0, 15)}...). Attempting to use Puter.js library...`);
         
-        // Lazy load to prevent startup crashes
-        let puter;
-        try {
-            // Using the user-suggested init method
-            const { init } = require('@heyputer/puter.js/src/init.cjs');
-            puter = init(token);
-        } catch (libErr) {
-            console.warn('[Puter] Library init failed, trying alternate import or fallback:', libErr.message);
-            // Fallback to simpler require if specific path fails
+        // Helper to run the library
+        const runLibrary = async (authToken) => {
+            let puter;
             try {
+                // Try primary import
+                const { init } = require('@heyputer/puter.js/src/init.cjs');
+                puter = init(authToken);
+            } catch (libErr) {
+                // Fallback import
                 const puterLib = require('@heyputer/puter.js');
-                puter = new puterLib(token);
-            } catch (e) {
-                throw new Error('Failed to load Puter.js library: ' + e.message);
+                puter = new puterLib(authToken);
             }
-        }
 
-        console.log('[Puter] Processing Img2Img with Gemini 2.5 Flash...');
+            const base64Image = imageBuffer.toString('base64');
+            const mimeType = 'image/jpeg'; 
 
-        const base64Image = imageBuffer.toString('base64');
-        const mimeType = 'image/jpeg'; 
+            console.log('[Puter] Sending request to Gemini 2.5 Flash...');
+            const imageElement = await puter.ai.txt2img(prompt, {
+                input_image: base64Image,
+                input_image_mime_type: mimeType,
+                model: 'gemini-2.5-flash-latest'
+            });
 
-        const imageElement = await puter.ai.txt2img(prompt, {
-            input_image: base64Image,
-            input_image_mime_type: mimeType,
-            model: 'gemini-2.5-flash-latest'
-        });
+            let src = imageElement.src || imageElement.url;
+            if (!src && typeof imageElement === 'string') src = imageElement;
+            if (!src) throw new Error('No image source returned from Puter AI');
 
-        let src = imageElement.src || imageElement.url;
-        if (!src && typeof imageElement === 'string') src = imageElement;
+            if (src.startsWith('data:image')) {
+                const base64Data = src.split(',')[1];
+                return { success: true, buffer: Buffer.from(base64Data, 'base64') };
+            } else if (src.startsWith('http')) {
+                const imgRes = await axios.get(src, { responseType: 'arraybuffer' });
+                return { success: true, buffer: Buffer.from(imgRes.data) };
+            } else {
+                throw new Error('Unknown output format from Puter.js');
+            }
+        };
 
-        if (!src) throw new Error('No image source returned from Puter AI');
-
-        if (src.startsWith('data:image')) {
-            const base64Data = src.split(',')[1];
-            return {
-                success: true,
-                buffer: Buffer.from(base64Data, 'base64')
-            };
-        } else if (src.startsWith('http')) {
-            const imgRes = await axios.get(src, { responseType: 'arraybuffer' });
-            return {
-                success: true,
-                buffer: Buffer.from(imgRes.data)
-            };
-        } else {
-            throw new Error('Unknown output format from Puter.js');
+        // First attempt: Raw Token
+        try {
+            return await runLibrary(token);
+        } catch (firstErr) {
+            // If Unauthorized, try adding/removing Bearer prefix
+            if (firstErr.message.includes('Unauthorized') || firstErr.message.includes('401')) {
+                console.warn('[Puter] First attempt Unauthorized. Retrying with/without Bearer prefix...');
+                const newToken = token.startsWith('Bearer ') ? token.replace('Bearer ', '') : `Bearer ${token}`;
+                return await runLibrary(newToken);
+            }
+            throw firstErr; // Throw other errors to main catch
         }
 
     } catch (error) {
-        console.error('[Puter] Library/API Error:', error.message);
+        console.error('[Puter] Library/API Error:', error.message || error);
         console.log('[Puter] Switching to Pollinations Fallback...');
         return await pollinationsImg2Img(imageBuffer, prompt);
     }

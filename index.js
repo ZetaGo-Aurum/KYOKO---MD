@@ -15,7 +15,11 @@
 const originalConsoleLog = console.log;
 require('dotenv').config();
 console.log = (...args) => {
-    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    const msg = args.map(a => {
+        if (a instanceof Error) return a.stack || a.message;
+        if (typeof a === 'object') return JSON.stringify(a, null, 2);
+        return String(a);
+    }).join(' ');
     if (msg.includes('Closing') && (msg.includes('session') || msg.includes('SessionEntry'))) {
         return;
     }
