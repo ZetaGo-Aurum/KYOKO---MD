@@ -1,8 +1,9 @@
 const YouTubeDownloader = require('../../src/scraper/youtube')
+const axios = require('axios')
 
 const pluginConfig = {
     name: 'ytmp4',
-    alias: ['ytvideo', 'youtubemp4'],
+    alias: ['ytvideo', 'youtubemp4', 'ytvid', 'ytv', 'video', 'yt4'],
     category: 'download',
     description: 'Download video YouTube MP4',
     usage: '.ytmp4 <url>',
@@ -14,6 +15,15 @@ const pluginConfig = {
     cooldown: 15,
     limit: 1,
     isEnabled: true
+}
+
+async function downloadBuffer(url) {
+    const response = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 120000,
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+    })
+    return Buffer.from(response.data)
 }
 
 async function handler(m, { sock }) {
@@ -30,7 +40,7 @@ async function handler(m, { sock }) {
             `└────────────────\n\n` +
             `┌──「 *EXAMPLE* 」\n` +
             `│ ${m.prefix}ytmp4 https://youtu.be/xxx\n` +
-            `│ ${m.prefix}ytmp4 https://youtube.com/shorts/xxx\n` +
+            `│ ${m.prefix}ytvid https://youtube.com/shorts/xxx\n` +
             `└────────────────`
         )
     }
@@ -69,8 +79,12 @@ async function handler(m, { sock }) {
         
         const title = (result.title || 'YouTube Video').slice(0, 100)
         
+        // Download as buffer first to avoid ENOENT
+        console.log('[ytmp4] Downloading video buffer...')
+        const videoBuffer = await downloadBuffer(result.url)
+        
         await sock.sendMessage(m.chat, {
-            video: { url: result.url },
+            video: videoBuffer,
             caption: 
                 `\n┏━━━━━━━━━━━━━━━━━━┓\n` +
                 `┃  ✅ *DOWNLOADED*     ┃\n` +

@@ -1,8 +1,9 @@
 const YouTubeDownloader = require('../../src/scraper/youtube')
+const axios = require('axios')
 
 const pluginConfig = {
     name: 'ytmp3',
-    alias: ['ytaudio', 'youtubemp3'],
+    alias: ['ytaudio', 'youtubemp3', 'ytaud', 'yta', 'audio', 'yt3', 'mp3'],
     category: 'download',
     description: 'Download audio YouTube MP3',
     usage: '.ytmp3 <url>',
@@ -14,6 +15,15 @@ const pluginConfig = {
     cooldown: 15,
     limit: 1,
     isEnabled: true
+}
+
+async function downloadBuffer(url) {
+    const response = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 120000,
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+    })
+    return Buffer.from(response.data)
 }
 
 async function handler(m, { sock }) {
@@ -30,6 +40,7 @@ async function handler(m, { sock }) {
             `└────────────────\n\n` +
             `┌──「 *EXAMPLE* 」\n` +
             `│ ${m.prefix}ytmp3 https://youtu.be/xxx\n` +
+            `│ ${m.prefix}yta https://youtube.com/watch?v=xxx\n` +
             `└────────────────`
         )
     }
@@ -68,8 +79,12 @@ async function handler(m, { sock }) {
         
         const filename = (result.title || 'youtube_audio').replace(/[<>:"/\\|?*]/g, '').slice(0, 100)
         
+        // Download as buffer first to avoid ENOENT
+        console.log('[ytmp3] Downloading audio buffer...')
+        const audioBuffer = await downloadBuffer(result.url)
+        
         await sock.sendMessage(m.chat, {
-            audio: { url: result.url },
+            audio: audioBuffer,
             mimetype: 'audio/mpeg',
             fileName: `${filename}.mp3`
         }, { quoted: m })

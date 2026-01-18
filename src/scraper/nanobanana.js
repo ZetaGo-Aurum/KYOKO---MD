@@ -276,10 +276,71 @@ async function puterImg2Img(imageBuffer, prompt) {
     return img2img(imageBuffer, prompt, { strength: 0.65 });
 }
 
-async function generateImage(prompt) {
-    const result = await hfTextToImage(prompt);
-    if (result) return { success: true, buffer: result, model: 'HuggingFace SDXL' };
-    return { success: false, error: 'HF_TOKEN tidak ada di .env' };
+/**
+ * Generate Image from text prompt with style/model routing
+ * @param {string} prompt - Text prompt
+ * @param {string} style - Model style: anime, sdxl, dreamshaper, etc.
+ */
+async function generateImage(prompt, style = 'default') {
+    let result = null;
+    let modelUsed = 'unknown';
+    
+    // Model routing based on style
+    const modelMap = {
+        'anime': 'anything-v5',
+        'sdxl': 'stable-diffusion-xl-v1-0',
+        'dreamshaper': 'dreamshaper-8',
+        'counterfeit': 'counterfeit-v3',
+        'meinamix': 'meinamix-v11',
+        'default': 'stable-diffusion-xl-v1-0'
+    };
+    
+    const selectedModel = modelMap[style] || modelMap['default'];
+    console.log(`[Nanobanana] Generating with style: ${style}, model: ${selectedModel}`);
+    
+    // Try Getimg.ai first (40 credits/day) - supports model selection
+    if (GETIMG_API_KEY) {
+        try {
+            console.log('[Getimg] Generating with Getimg.ai...');
+            
+            const response = await axios.post('https://api.getimg.ai/v1/stable-diffusion/text-to-image', {
+                model: selectedModel,
+                prompt: prompt,
+                negative_prompt: 'lowres, bad anatomy, text, error, worst quality, low quality',
+                width: 1024,
+                height: 1024,
+                steps: 30,
+                guidance: 7.5,
+                output_format: 'png'
+            }, {
+                headers: { 'Authorization': `Bearer ${GETIMG_API_KEY}`, 'Content-Type': 'application/json' },
+                timeout: 120000
+            });
+            
+            if (response.data?.image) {
+                result = Buffer.from(response.data.image, 'base64');
+                modelUsed = `Getimg (${selectedModel})`;
+                console.log('[Getimg] ✓ Success!');
+            }
+        } catch (error) {
+            console.error('[Getimg] Text2Img Error:', error.response?.data?.error || error.message);
+        }
+    }
+    
+    // Fallback to HuggingFace
+    if (!result && HF_TOKEN) {
+        result = await hfTextToImage(prompt);
+        if (result) modelUsed = 'HuggingFace SDXL';
+    }
+    
+    if (result) {
+        return { success: true, buffer: result, model: modelUsed };
+    }
+    
+    return { 
+        success: false, 
+        error: 'Gagal generate gambar. Pastikan GETIMG_API_KEY atau HF_TOKEN ada di .env' 
+    };
 }
 
 module.exports = {
@@ -287,5 +348,3 @@ module.exports = {
     toBlack, toWhite, toAnime, toCartoon, toManga, toChinese, toComic, toHijab, toPresident,
     puterImg2Img
 };
-
-module.exports = Object.assign(puterImg2Img, module.exports);
